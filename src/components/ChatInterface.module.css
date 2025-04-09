@@ -1,0 +1,169 @@
+.chatContainer {
+  @apply flex flex-col h-full bg-white overflow-hidden;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.header {
+  @apply flex items-center justify-between p-4;
+  background-color: #33475b;
+}
+
+.header h2 {
+  @apply text-white text-lg font-medium;
+}
+
+.messageContainer {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+  padding: 1rem;
+  background-color: #f5f8fa;
+  min-height: 0;
+}
+
+.messageContainer > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  @apply mb-4 flex;
+}
+
+.userMessage {
+  @apply justify-end;
+}
+
+.assistantMessage {
+  @apply justify-start;
+}
+
+.messageBubble {
+  @apply px-4 py-2 max-w-[85%] rounded-lg;
+}
+
+.messageBubble h1 {
+  @apply text-xl font-bold mb-2;
+}
+
+.messageBubble h2 {
+  @apply text-lg font-bold mb-2;
+}
+
+.messageBubble h3 {
+  @apply text-base font-bold mb-2;
+}
+
+.messageBubble ul {
+  @apply list-disc pl-5 mb-2;
+}
+
+.messageBubble ol {
+  @apply list-decimal pl-5 mb-2;
+}
+
+.messageBubble li {
+  @apply mb-1;
+}
+
+.messageBubble p {
+  @apply mb-2;
+}
+
+.messageBubble p:last-child {
+  @apply mb-0;
+}
+
+.userBubble {
+  @apply bg-[#33475b] text-white ml-auto;
+  border-bottom-right-radius: 4px;
+}
+
+.assistantBubble {
+  @apply bg-white text-gray-800;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.inputContainer {
+  @apply p-4 border-t border-gray-200 bg-white;
+}
+
+.inputForm {
+  @apply flex gap-2;
+}
+
+.input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: theme('borderRadius.hubbot');
+  font-size: 1rem;
+  outline: none;
+}
+
+.input:focus {
+  border-color: theme('colors.hubbot.dark');
+  box-shadow: 0 0 0 2px rgba(51, 71, 91, 0.1);
+}
+
+/* Add mobile styles */
+@media (max-width: 768px) {
+  .input {
+    max-width: calc(100% - 60px);
+  }
+  
+  .sendButton {
+    min-width: 50px;
+    padding: 3px 10px;
+  }
+}
+
+.sendButton {
+  padding: 0.75rem 1rem;
+  background-color: theme('colors.hubbot.dark');
+  color: white;
+  border: none;
+  border-radius: theme('borderRadius.hubbot');
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.sendButton:hover:not(:disabled) {
+  background-color: #425b76;
+}
+
+.sendButton:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.faqSection {
+  @apply p-4 border-b border-gray-200;
+}
+
+.faqButton {
+  width: 100%;
+  padding: 1rem;
+  text-align: left;
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: theme('borderRadius.hubbot');
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1rem;
+}
+
+/* Add mobile styles */
+@media (max-width: 768px) {
+  .faqButton {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+  }
+}
+
+.faqButton:hover {
+  background-color: theme('colors.hubbot.light');
+} 

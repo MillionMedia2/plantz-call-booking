@@ -1,0 +1,13 @@
+/* src/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: You can add truly global base styles here if needed,
+   but often it's better to handle styling within components or
+   via tailwind.config.ts theme extensions. */
+
+/* Example: If you wanted a default body background different from Tailwind's */
+/* body {
+  @apply bg-gray-50; /* Example using Tailwind apply directive */
+/* } */
