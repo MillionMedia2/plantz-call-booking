@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
-import { systemPrompt } from '@/config/instructions';
+import { informationAgent, bookingAgent, handleBookCall } from '@/config/agents';
 
 interface APIError extends Error {
   status?: number;
@@ -29,11 +29,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Define vector store IDs - parsing from environment variable
-const vectorStoreIds = process.env.VECTOR_STORE_IDS
-  ? process.env.VECTOR_STORE_IDS.split(',').map(id => id.trim()).filter(id => id)
-  : [];
-
 // Configure edge runtime for Vercel deployment and streaming
 export const runtime = 'edge';
 
@@ -41,18 +36,19 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     console.log("Received request body:", body);
-    console.log("Request body type:", typeof body);
-    console.log("Input value:", body.input);
-    console.log("Input type:", typeof body.input);
     
-    const { input, previous_response_id } = body;
+    const { input, previous_response_id, agent_type = 'information' } = body;
 
     if (!input) {
       console.error("Missing input parameter in request body");
       return new Response(JSON.stringify({ 
         error: 'Input is required',
         receivedBody: body,
-        expectedFormat: { input: "string", previous_response_id: "string (optional)" }
+        expectedFormat: { 
+          input: "string", 
+          previous_response_id: "string (optional)",
+          agent_type: "string (optional, 'information' or 'booking')"
+        }
       }), { 
         status: 400,
         headers: {
@@ -61,22 +57,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Construct tools only if vector store IDs are available
-    const tools = vectorStoreIds.length > 0
-      ? [{
-          type: "file_search",
-          vector_store_ids: vectorStoreIds,
-          max_num_results: 20
-        }]
-      : undefined; // Pass undefined if no IDs
+    // Select the appropriate agent configuration
+    const agentConfig = agent_type === 'booking' ? bookingAgent : informationAgent;
 
     // Log the exact parameters being sent to OpenAI
     const params = {
-      model: "gpt-4o-mini",
-      instructions: systemPrompt,
+      model: agentConfig.model,
+      instructions: agentConfig.instructions,
       input: input,
       previous_response_id: previous_response_id,
-      tools: tools,
+      tools: agentConfig.tools,
       store: true,
       stream: true,
       temperature: 0.7,
@@ -84,17 +74,7 @@ export async function POST(req: NextRequest) {
     };
     console.log("OpenAI API parameters:", JSON.stringify(params, null, 2));
 
-    const response = await (openai.responses.create as any)({
-      model: "gpt-4o-mini",
-      instructions: systemPrompt,
-      input: input,
-      previous_response_id: previous_response_id,
-      tools: tools,
-      store: true,
-      stream: true,
-      temperature: 0.7,
-      top_p: 0.9,
-    });
+    const response = await (openai.responses.create as any)(params);
 
     // Create a ReadableStream to pipe the OpenAI stream chunks
     const responseStream = new ReadableStream({
@@ -111,7 +91,6 @@ export async function POST(req: NextRequest) {
       },
       cancel() {
         console.log("Stream cancelled by client.");
-        // You might add logic here if needed when the client disconnects
       }
     });
 
