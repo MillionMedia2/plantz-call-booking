@@ -43,6 +43,22 @@ export default function ChatInterface() {
   const MAX_RETRIES = 3;
   const INITIAL_RETRY_DELAY = 1000;
 
+  // Add state for booking information
+  const [bookingInfo, setBookingInfo] = useState<{
+    name?: string;
+    phone?: string;
+    dateTime?: string;
+    step: 'name' | 'phone' | 'dateTime' | 'complete';
+  }>({ step: 'name' });
+
+  // Add a ref to track the current booking step
+  const currentBookingStepRef = useRef<'name' | 'phone' | 'dateTime' | 'complete'>('name');
+  
+  // Add refs to track booking information
+  const bookingNameRef = useRef<string | null>(null);
+  const bookingPhoneRef = useRef<string | null>(null);
+  const bookingDateTimeRef = useRef<string | null>(null);
+
   // Cleanup function for SSE and timeouts
   useEffect(() => {
     return () => {
@@ -131,23 +147,26 @@ export default function ChatInterface() {
       clearThinkingTimers();
   };
 
-  const sendMessageWithRetry = async (messageContent: string, retryCount = 0): Promise<Response> => {
+  const sendMessageWithRetry = async (messageContent: string, retryCount = 0, agentType?: 'information' | 'booking'): Promise<Response> => {
+    console.log("sendMessageWithRetry - currentAgent:", agentType || currentAgent);
     abortController.current = new AbortController();
     const timeoutId = setTimeout(() => abortController.current?.abort(), TIMEOUT_MS);
 
     try {
-      const cacheKey = `${messageContent}-${currentResponseId}`;
+      const cacheKey = `${messageContent}-${currentResponseId}-${agentType || currentAgent}`;
       const cachedResponse = messageCache.current.get(cacheKey);
       if (cachedResponse) {
         return cachedResponse;
       }
 
+      console.log("Sending API request with agent_type:", agentType || currentAgent);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: messageContent,
           previous_response_id: currentResponseId,
+          agent_type: agentType || currentAgent
         }),
         signal: abortController.current.signal,
       });
@@ -155,7 +174,7 @@ export default function ChatInterface() {
       if (!response.ok && retryCount < MAX_RETRIES) {
         const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
         await new Promise(resolve => setTimeout(resolve, delay));
-        return sendMessageWithRetry(messageContent, retryCount + 1);
+        return sendMessageWithRetry(messageContent, retryCount + 1, agentType);
       }
 
       messageCache.current.set(cacheKey, response.clone());
@@ -175,7 +194,7 @@ export default function ChatInterface() {
     setInput(e.target.value);
   };
 
-  const handleSendMessage = useCallback(async (messageContent: string) => {
+  const handleSendMessage = useCallback(async (messageContent: string, agentType?: 'information' | 'booking') => {
     if (!messageContent.trim() || isLoading) return;
 
     setError(null);
@@ -192,12 +211,21 @@ export default function ChatInterface() {
     setMessages(prevMessages => [...prevMessages, newUserMessage]);
     setInput('');
 
+    // If we're in booking mode, check if the message contains booking information
+    if (currentAgent === 'booking') {
+      handleBookingProcess(messageContent);
+      setIsLoading(false);
+      stopThinkingIndicator();
+      return;
+    }
+
     let assistantResponse = '';
     let responseIdReceived: string | null = null;
     let assistantMessageIndex = -1;
 
     try {
-        const response = await sendMessageWithRetry(messageContent);
+        // Use the provided agentType or fall back to currentAgent
+        const response = await sendMessageWithRetry(messageContent, 0, agentType);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }));
@@ -257,7 +285,7 @@ export default function ChatInterface() {
         stopThinkingIndicator();
         setIsLoading(false);
     }
-  }, [currentResponseId, isLoading]);
+  }, [currentResponseId, isLoading, currentAgent]);
 
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -309,8 +337,26 @@ export default function ChatInterface() {
   };
 
   const handleBookCall = () => {
+    // Set the agent type to booking
     setCurrentAgent('booking');
-    handleSendMessage("I'd like to book a call with a specialist");
+    
+    // Reset the booking info
+    setBookingInfo({ step: 'name' });
+    currentBookingStepRef.current = 'name';
+    bookingNameRef.current = null;
+    bookingPhoneRef.current = null;
+    bookingDateTimeRef.current = null;
+    
+    // Add a user message
+    const newUserMessage = { role: 'user' as const, content: "I'd like to book a call with a specialist" };
+    setMessages(prevMessages => [...prevMessages, newUserMessage]);
+    
+    // Create a new assistant message
+    const newAssistantMessage = { role: 'assistant' as const, content: "I'd be happy to help you book a call with a specialist. To get started, could you please provide your full name?" };
+    setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
+    
+    // Scroll to the bottom
+    setTimeout(scrollToBottom, 100);
   };
 
   const renderThinkingIndicator = () => {
@@ -322,6 +368,178 @@ export default function ChatInterface() {
     if (thinkingStage === 3) { icon = <FiClock className="animate-pulse mr-2" />; text = "Nearly there..."; }
     return (<div className="flex items-center justify-center text-sm text-gray-500 my-2">{icon}<span>{text}</span></div>);
   };
+
+  // Update the handleBookingProcess function
+  const handleBookingProcess = useCallback(async (messageContent: string) => {
+    console.log('handleBookingProcess called with message:', messageContent);
+    console.log('Current booking step:', currentBookingStepRef.current);
+    
+    if (currentAgent !== 'booking') return;
+    
+    // Extract name if we're on the name step
+    if (currentBookingStepRef.current === 'name') {
+      console.log('Processing name step');
+      // First try to match specific patterns
+      const nameMatch = messageContent.match(/name\s+is\s+([^,.]+)/i) || 
+                       messageContent.match(/call\s+me\s+([^,.]+)/i) ||
+                       messageContent.match(/i\s+am\s+([^,.]+)/i) ||
+                       messageContent.match(/my\s+name\s+is\s+([^,.]+)/i);
+      
+      // If no specific pattern matches, assume the entire message is the name
+      // (unless it contains numbers which might indicate it's a phone number)
+      const name = nameMatch ? nameMatch[1].trim() : 
+                  (!/\d/.test(messageContent) ? messageContent.trim() : null);
+      
+      if (name) {
+        console.log('Name extracted:', name);
+        // Update both the state and the refs
+        setBookingInfo(prev => ({ ...prev, name, step: 'phone' }));
+        currentBookingStepRef.current = 'phone';
+        bookingNameRef.current = name;
+        
+        // Add assistant message asking for phone
+        const phoneMessage = { 
+          role: 'assistant' as const, 
+          content: `Thank you ${name}. Could you please provide your phone number where we can reach you?` 
+        };
+        setMessages(prev => [...prev, phoneMessage]);
+        return;
+      }
+    }
+    
+    // Extract phone if we're on the phone step
+    if (currentBookingStepRef.current === 'phone') {
+      console.log('Processing phone step');
+      // Remove all spaces and non-digit characters from the message
+      const cleanedMessage = messageContent.replace(/\s+/g, '').replace(/[^\d]/g, '');
+      
+      // Check if the cleaned message contains at least 10 digits
+      if (cleanedMessage.length >= 10) {
+        // Extract the first 11 digits (or more if provided)
+        // Make sure to preserve the leading zero
+        const phone = cleanedMessage.substring(0, 11);
+        console.log('Phone extracted:', phone);
+        // Update both the state and the refs
+        setBookingInfo(prev => ({ ...prev, phone, step: 'dateTime' }));
+        currentBookingStepRef.current = 'dateTime';
+        bookingPhoneRef.current = phone;
+        
+        // Add assistant message asking for date/time
+        const dateTimeMessage = { 
+          role: 'assistant' as const, 
+          content: "Great! What date and time would you prefer for the call? (e.g., 'tomorrow at 2pm' or 'next Monday at 10am')" 
+        };
+        setMessages(prev => [...prev, dateTimeMessage]);
+        return;
+      }
+    }
+    
+    // Extract date/time if we're on the dateTime step
+    if (currentBookingStepRef.current === 'dateTime') {
+      console.log('Processing dateTime step');
+      
+      // Try to match the entire message as the date/time
+      // This is a simple approach that assumes the entire message is the date/time
+      // if it contains at least one digit (for the time)
+      if (/\d/.test(messageContent)) {
+        const dateTime = messageContent.trim();
+        console.log('DateTime extracted (full message):', dateTime);
+        // Update both the state and the refs
+        setBookingInfo(prev => ({ ...prev, dateTime, step: 'complete' }));
+        currentBookingStepRef.current = 'complete';
+        bookingDateTimeRef.current = dateTime;
+        
+        try {
+          // Get the current values from the refs
+          const name = bookingNameRef.current;
+          const phone = bookingPhoneRef.current;
+          
+          // Check if we have all the required information
+          if (!name || !phone) {
+            console.error('Missing required information:', { name, phone, dateTime });
+            throw new Error('Missing required information for booking');
+          }
+          
+          console.log('Attempting to book call with:', { 
+            name, 
+            phone, 
+            dateTime 
+          });
+          
+          // Call the booking API - use the /api/sheets endpoint for Google Sheets integration
+          const response = await fetch('/api/sheets', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              name, 
+              phone, 
+              dateTime 
+            }),
+          });
+          
+          console.log('API response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API error response:', errorText);
+            throw new Error(`Failed to book call: ${response.status} ${response.statusText}`);
+          }
+          
+          let result;
+          try {
+            result = await response.json();
+            console.log('Booking API response:', result);
+          } catch (e) {
+            console.error('Error parsing JSON response:', e);
+            // Continue with a success message even if JSON parsing fails
+          }
+          
+          // Add a success message
+          const successMessage = { 
+            role: 'assistant' as const, 
+            content: `Great! I've booked your call for ${dateTime}. We'll call you at ${phone}. Thank you for choosing our service!` 
+          };
+          setMessages(prev => [...prev, successMessage]);
+          
+          // Switch back to information agent
+          setCurrentAgent('information');
+          
+          // Reset booking info
+          setBookingInfo({ step: 'name' });
+          currentBookingStepRef.current = 'name';
+          bookingNameRef.current = null;
+          bookingPhoneRef.current = null;
+          bookingDateTimeRef.current = null;
+        } catch (error) {
+          console.error('Error booking call:', error);
+          
+          // Add an error message
+          const errorMessage = { 
+            role: 'assistant' as const, 
+            content: "I'm sorry, there was an error booking your call. Please try again later or contact support." 
+          };
+          setMessages(prev => [...prev, errorMessage]);
+          
+          // Reset booking info
+          setBookingInfo({ step: 'name' });
+          currentBookingStepRef.current = 'name';
+          bookingNameRef.current = null;
+          bookingPhoneRef.current = null;
+          bookingDateTimeRef.current = null;
+        }
+      } else {
+        console.log('No date/time pattern matched in message');
+        // Add a message asking for a valid date/time
+        const invalidDateTimeMessage = { 
+          role: 'assistant' as const, 
+          content: "I couldn't understand that date and time. Please provide a date and time in a format like 'tomorrow at 2pm', 'next Monday', or 'January 15th at 10am'." 
+        };
+        setMessages(prev => [...prev, invalidDateTimeMessage]);
+      }
+    }
+  }, [currentAgent]);
 
   // --- Render Function ---
   return (
