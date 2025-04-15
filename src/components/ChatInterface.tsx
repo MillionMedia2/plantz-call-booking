@@ -379,7 +379,7 @@ export default function ChatInterface() {
       )}
 
       {/* Example Questions */}
-      {messages.length <= 1 && (
+      {/* {messages.length <= 1 && (
         <div className={styles.faqSection}>
           <p className="text-sm text-gray-600 mb-3">Frequently Asked Questions:</p>
           <div className="space-y-2">
@@ -397,7 +397,7 @@ export default function ChatInterface() {
             </button>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Messages */}
       <div className={styles.messageContainer}>
