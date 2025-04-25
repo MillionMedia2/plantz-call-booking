@@ -31,6 +31,7 @@ export default function ChatInterface() {
   const [showHistory, setShowHistory] = useState(false);
   const [chatHistory, setChatHistory] = useState<HistoryItem[]>([]);
   const [currentAgent, setCurrentAgent] = useState<'information' | 'booking'>('information');
+  const [isBooking, setIsBooking] = useState(false);
 
   const thinkingTimer1 = useRef<number | null>(null);
   const thinkingTimer2 = useRef<number | null>(null);
@@ -81,7 +82,7 @@ export default function ChatInterface() {
         console.error("Failed to load chat history from localStorage:", e);
         localStorage.removeItem(LOCAL_STORAGE_KEY); // Clear corrupted data
     }
-    setMessages([{ role: 'assistant', content: 'Welcome to the Plantz Agent.' }]);
+    setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
     isFirstUserMessage.current = true; // Reset flag on component mount
   }, []);
 
@@ -297,7 +298,7 @@ export default function ChatInterface() {
   };
 
   const handleNewChat = () => {
-      setMessages([{ role: 'assistant', content: 'Welcome to the Plantz Agent.' }]);
+      setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
       setInput('');
       setCurrentResponseId(null); // Reset conversation continuity ID
       setIsLoading(false);
@@ -424,10 +425,10 @@ export default function ChatInterface() {
         currentBookingStepRef.current = 'dateTime';
         bookingPhoneRef.current = phone;
         
-        // Add assistant message asking for date/time
+        // Add assistant message asking for date/time, including constraints
         const dateTimeMessage = { 
           role: 'assistant' as const, 
-          content: "Great! What date and time would you prefer for the call? (e.g., 'tomorrow at 2pm' or 'next Monday at 10am')" 
+          content: "Great! What date and time would you prefer for the call? Please note, appointments are available Monday to Friday, between 9am and 5pm UK time. (e.g., 'tomorrow at 2pm' or 'next Monday at 10am')" 
         };
         setMessages(prev => [...prev, dateTimeMessage]);
         return;
@@ -438,12 +439,59 @@ export default function ChatInterface() {
     if (currentBookingStepRef.current === 'dateTime') {
       console.log('Processing dateTime step');
       
-      // Try to match the entire message as the date/time
-      // This is a simple approach that assumes the entire message is the date/time
-      // if it contains at least one digit (for the time)
+      // Use the simplified approach: assume the message is the date/time if it has digits
       if (/\d/.test(messageContent)) {
         const dateTime = messageContent.trim();
-        console.log('DateTime extracted (full message):', dateTime);
+        console.log('Potential DateTime extracted (full message):', dateTime);
+
+        // --- Add Validation Logic ---
+        let isValidTime = true; // Assume valid unless proven otherwise
+        const lowerCaseDateTime = dateTime.toLowerCase();
+
+        // Check for weekend days
+        if (/\bsaturday\b|\bsunday\b|\bweekend\b/.test(lowerCaseDateTime)) {
+            isValidTime = false;
+        }
+
+        // Check for hours outside 9am-5pm (simple check based on digits)
+        const hourMatch = lowerCaseDateTime.match(/\b([0-9]|1[0-9]|2[0-3])(:[0-5][0-9])?\s*(am|pm)?\b/);
+        if (hourMatch) {
+            let hour = parseInt(hourMatch[1], 10);
+            const ampm = hourMatch[3];
+
+            // Convert to 24-hour format if am/pm is present
+            if (ampm === 'pm' && hour < 12) {
+                hour += 12;
+            } else if (ampm === 'am' && hour === 12) { // Midnight case
+                hour = 0;
+            }
+
+            // Check if hour is outside 9 (inclusive) and 17 (exclusive)
+            if (hour < 9 || hour >= 17) {
+                isValidTime = false;
+            }
+            console.log(`Parsed Hour: ${hour}, isValid: ${isValidTime}`);
+        } else {
+            console.log('Could not extract specific hour for validation.');
+            // If no specific hour found, we might proceed optimistically or add more checks
+        }
+        // --- End Validation Logic ---
+
+        if (!isValidTime) {
+            console.log('Booking time is outside working hours.');
+            const invalidTimeMessage = {
+                role: 'assistant' as const,
+                content: "It looks like the time you suggested is outside our standard appointment hours (Monday to Friday, 9am - 5pm UK time). Could you please suggest a different time during these hours?"
+            };
+            setMessages(prev => [...prev, invalidTimeMessage]);
+            // Keep the step as dateTime, don't reset refs yet
+            setBookingInfo(prev => ({ ...prev, step: 'dateTime' })); 
+            currentBookingStepRef.current = 'dateTime';
+            return; // Stop processing, wait for new input
+        }
+
+        // ---- If time is valid, proceed with booking ----
+        console.log('Booking time is potentially valid. Proceeding...');
         // Update both the state and the refs
         setBookingInfo(prev => ({ ...prev, dateTime, step: 'complete' }));
         currentBookingStepRef.current = 'complete';
@@ -530,11 +578,11 @@ export default function ChatInterface() {
           bookingDateTimeRef.current = null;
         }
       } else {
-        console.log('No date/time pattern matched in message');
+        console.log('No date/time pattern matched in message (missing digits?)');
         // Add a message asking for a valid date/time
         const invalidDateTimeMessage = { 
           role: 'assistant' as const, 
-          content: "I couldn't understand that date and time. Please provide a date and time in a format like 'tomorrow at 2pm', 'next Monday', or 'January 15th at 10am'." 
+          content: "I couldn't understand that date and time. Please provide a date and time in a format like 'tomorrow at 2pm', 'next Monday at 10am', including the time." 
         };
         setMessages(prev => [...prev, invalidDateTimeMessage]);
       }
@@ -650,29 +698,30 @@ export default function ChatInterface() {
       </div>
 
       {/* Input */}
-      <div className={styles.inputContainer}>
-        <form onSubmit={handleFormSubmit} className={styles.inputForm}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Write a message..."
-            className={styles.input}
-            disabled={isLoading}
-            aria-label="Chat message input"
-          />
-          <button
-            type="submit"
-            className={styles.sendButton}
-            disabled={isLoading || !input.trim()}
-            aria-label="Send message"
-          >
-            <FiSend size={18} />
-          </button>
-        </form>
-        <div className="text-center text-xs text-gray-400 mt-2">
-          Powered by <a href="https://plantz.io" target="_blank" rel="noopener noreferrer" className="hover:underline">Plantz</a>
-        </div>
+      <div className="flex items-center gap-2 p-4 border-t border-gray-200">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
+          placeholder="Type your message..."
+          className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={isBooking}
+        />
+        <button
+          onClick={() => handleSendMessage(input)}
+          disabled={isBooking}
+          className="p-2 text-white bg-hubbot-hover rounded-lg hover:bg-hubbot-blue focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        >
+          {isBooking ? (
+            <div className="flex items-center gap-2">
+              <FiLoader className="animate-spin" />
+              <span>Booking...</span>
+            </div>
+          ) : (
+            <FiSend />
+          )}
+        </button>
       </div>
     </div>
   );
