@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
-import { informationAgent, bookingAgent, handleBookCall } from '@/config/agents';
+import { informationAgent, bookingAgent, eligibilityAgent } from '@/config/agents';
 
 interface APIError extends Error {
   status?: number;
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         expectedFormat: { 
           input: "string", 
           previous_response_id: "string (optional)",
-          agent_type: "string (optional, 'information' or 'booking')"
+          agent_type: "string (optional, 'information', 'booking', or 'eligibility')"
         }
       }), { 
         status: 400,
@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Select the appropriate agent configuration
-    const agentConfig = agent_type === 'booking' ? bookingAgent : informationAgent;
+    const agentConfig = 
+      agent_type === 'booking' ? bookingAgent :
+      agent_type === 'eligibility' ? eligibilityAgent :
+      informationAgent;
 
     // Log the exact parameters being sent to OpenAI
     const params = {
@@ -80,14 +83,47 @@ export async function POST(req: NextRequest) {
     const responseStream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
+        try {
+          const stream = (response as unknown) as AsyncIterable<any>;
+          for await (const chunk of stream) {
+            try {
+              // Ensure we have a valid chunk
+              if (!chunk || typeof chunk !== 'object') {
+                console.error("Invalid chunk received:", chunk);
+                continue;
+              }
 
-        // Use a more precise type assertion for the stream
-        const stream = (response as unknown) as AsyncIterable<any>;
-        for await (const chunk of stream) {
-            const data = `data: ${JSON.stringify(chunk)}\n\n`;
-            controller.enqueue(encoder.encode(data));
+              // Handle different chunk types
+              if (chunk.type === 'error') {
+                console.error("Error chunk received:", chunk);
+                const errorData = `data: ${JSON.stringify({ type: "error", error: chunk.error || "Unknown error" })}\n\n`;
+                controller.enqueue(encoder.encode(errorData));
+                break;
+              }
+
+              // Send the chunk to the client
+              const data = `data: ${JSON.stringify(chunk)}\n\n`;
+              controller.enqueue(encoder.encode(data));
+
+              // If this is a completion chunk, we're done
+              if (chunk.type === 'response.completed') {
+                break;
+              }
+            } catch (chunkError) {
+              console.error("Error processing chunk:", chunkError);
+              const errorData = `data: ${JSON.stringify({ type: "error", error: "Failed to process chunk" })}\n\n`;
+              controller.enqueue(encoder.encode(errorData));
+              break;
+            }
+          }
+        } catch (error) {
+          console.error("Stream error:", error);
+          const errorMessage = error instanceof Error ? error.message : "Stream interrupted";
+          const errorData = `data: ${JSON.stringify({ type: "error", error: errorMessage })}\n\n`;
+          controller.enqueue(encoder.encode(errorData));
+        } finally {
+          controller.close();
         }
-        controller.close();
       },
       cancel() {
         console.log("Stream cancelled by client.");

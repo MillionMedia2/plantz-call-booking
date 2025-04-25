@@ -21,6 +21,13 @@ interface HistoryItem {
 
 const LOCAL_STORAGE_KEY = 'plantzAgentChatHistory';
 
+type AgentType = 'information' | 'eligibility' | 'booking';
+
+interface EligibilityState {
+  status: 'not_started' | 'in_progress' | 'passed' | 'failed';
+  condition?: string;
+}
+
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -30,8 +37,9 @@ export default function ChatInterface() {
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [chatHistory, setChatHistory] = useState<HistoryItem[]>([]);
-  const [currentAgent, setCurrentAgent] = useState<'information' | 'booking'>('information');
+  const [currentAgent, setCurrentAgent] = useState<AgentType>('information');
   const [isBooking, setIsBooking] = useState(false);
+  const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ status: 'not_started' });
 
   const thinkingTimer1 = useRef<number | null>(null);
   const thinkingTimer2 = useRef<number | null>(null);
@@ -148,7 +156,7 @@ export default function ChatInterface() {
       clearThinkingTimers();
   };
 
-  const sendMessageWithRetry = async (messageContent: string, retryCount = 0, agentType?: 'information' | 'booking'): Promise<Response> => {
+  const sendMessageWithRetry = async (messageContent: string, retryCount = 0, agentType?: AgentType): Promise<Response> => {
     console.log("sendMessageWithRetry - currentAgent:", agentType || currentAgent);
     abortController.current = new AbortController();
     const timeoutId = setTimeout(() => abortController.current?.abort(), TIMEOUT_MS);
@@ -195,7 +203,41 @@ export default function ChatInterface() {
     setInput(e.target.value);
   };
 
-  const handleSendMessage = useCallback(async (messageContent: string, agentType?: 'information' | 'booking') => {
+  const handleAgentSwitch = (agent: AgentType) => {
+    if (agent === 'eligibility') {
+      setEligibilityState({ status: 'in_progress' });
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Before we can book your call, I need to check your eligibility. What condition do you want to treat with cannabis?'
+      }]);
+    }
+    setCurrentAgent(agent);
+  };
+
+  const handleBookCall = () => {
+    // Set the agent type to eligibility
+    setCurrentAgent('eligibility');
+    
+    // Reset the booking info
+    setBookingInfo({ step: 'name' });
+    currentBookingStepRef.current = 'name';
+    bookingNameRef.current = null;
+    bookingPhoneRef.current = null;
+    bookingDateTimeRef.current = null;
+    
+    // Add a user message
+    const newUserMessage = { role: 'user' as const, content: "I'd like to book a call with a specialist" };
+    setMessages(prevMessages => [...prevMessages, newUserMessage]);
+    
+    // Create a new assistant message
+    const newAssistantMessage = { role: 'assistant' as const, content: "Before we can book your call, I need to check your eligibility. What condition do you want to treat with cannabis?" };
+    setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
+    
+    // Scroll to the bottom
+    setTimeout(scrollToBottom, 100);
+  };
+
+  const handleSendMessage = useCallback(async (messageContent: string, agentType?: AgentType) => {
     if (!messageContent.trim() || isLoading) return;
 
     setError(null);
@@ -227,6 +269,8 @@ export default function ChatInterface() {
     try {
         // Use the provided agentType or fall back to currentAgent
         const response = await sendMessageWithRetry(messageContent, 0, agentType);
+        console.log("Initial response received:", response.status);
+        console.log("Response headers:", Object.fromEntries(response.headers.entries()));
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }));
@@ -238,51 +282,105 @@ export default function ChatInterface() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        console.log("Stream setup complete, starting to read chunks");
 
         setMessages(prev => {
             assistantMessageIndex = prev.length;
             return [...prev, { role: 'assistant', content: '' }];
         });
 
+        // Add a timeout to detect stalled streams
+        const streamTimeout = setTimeout(() => {
+            console.error("Stream timeout - no data received for 30 seconds");
+            reader.cancel("Stream timeout");
+        }, 30000);
+
         while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop() || '';
+            try {
+                console.log("Reading stream chunk...");
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log("Stream complete");
+                    clearTimeout(streamTimeout);
+                    break;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                console.log("Received buffer:", buffer);
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop() || '';
 
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const jsonString = line.substring(6);
-                        const chunk = JSON.parse(jsonString);
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const jsonString = line.substring(6);
+                            const chunk = JSON.parse(jsonString);
+                            console.log("Processing chunk:", chunk);
 
-                        if (chunk.type === 'response.output_text.delta' && chunk.delta) {
-                            assistantResponse += chunk.delta;
-                            setMessages(prev => {
-                                const updatedMessages = [...prev];
-                                if (assistantMessageIndex !== -1 && updatedMessages[assistantMessageIndex]) {
-                                    updatedMessages[assistantMessageIndex].content = assistantResponse;
-                                }
-                                return updatedMessages;
-                            });
-                        } else if (chunk.type === 'response.completed' && chunk.response?.id) {
-                            responseIdReceived = chunk.response.id;
+                            if (chunk.type === 'error') {
+                                console.error("Stream error received:", chunk.error);
+                                clearTimeout(streamTimeout);
+                                throw new Error(`Stream error: ${chunk.error}`);
+                            }
+
+                            if (chunk.type === 'response.output_text.delta' && chunk.delta) {
+                                assistantResponse += chunk.delta;
+                                console.log("Updated assistant response:", assistantResponse);
+                                setMessages(prev => {
+                                    const updatedMessages = [...prev];
+                                    if (assistantMessageIndex !== -1 && updatedMessages[assistantMessageIndex]) {
+                                        updatedMessages[assistantMessageIndex].content = assistantResponse;
+                                    }
+                                    return updatedMessages;
+                                });
+                            } else if (chunk.type === 'response.completed' && chunk.response?.id) {
+                                console.log("Response completed, ID:", chunk.response.id);
+                                responseIdReceived = chunk.response.id;
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse SSE chunk:", line, e);
+                            if (e instanceof Error && e.message.includes('Stream error')) {
+                                clearTimeout(streamTimeout);
+                                throw e;
+                            }
                         }
-                    } catch (e) {
-                        console.error("Failed to parse SSE chunk:", line, e);
                     }
+                }
+            } catch (e) {
+                console.error("Error in stream reading loop:", e);
+                if (e instanceof Error && e.message.includes('Stream error')) {
+                    clearTimeout(streamTimeout);
+                    throw e;
                 }
             }
         }
+        console.log("Stream processing finished");
         setCurrentResponseId(responseIdReceived);
 
+        // Handle agent transitions after stream is complete
+        if (currentAgent === 'eligibility') {
+            console.log("Handling eligibility response:", assistantResponse);
+            const response = assistantResponse.trim();
+            if (response === 'YES') {
+                console.log("Eligibility check passed, switching to booking");
+                setCurrentAgent('booking');
+                setMessages(prev => {
+                    const updatedMessages = [...prev];
+                    const lastMessage = updatedMessages[updatedMessages.length - 1];
+                    if (lastMessage) {
+                        lastMessage.content = `OK, ${messageContent} can be treated with cannabis so let's book a call. What is your full name?`;
+                    }
+                    return updatedMessages;
+                });
+            }
+        }
+
     } catch (error: unknown) {
-        console.error("Fetch error:", error);
+        console.error("Stream error details:", error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
         setError(`Error: ${errorMessage}`);
         setMessages(prev => prev.filter((_, index) => index !== assistantMessageIndex));
     } finally {
+        console.log("Stream handling complete");
         stopThinkingIndicator();
         setIsLoading(false);
     }
@@ -298,16 +396,17 @@ export default function ChatInterface() {
   };
 
   const handleNewChat = () => {
-      setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
-      setInput('');
-      setCurrentResponseId(null); // Reset conversation continuity ID
-      setIsLoading(false);
-      setThinkingStage(0);
-      setError(null);
-      clearThinkingTimers();
-      setShowHistory(false); // Close history panel
-      isFirstUserMessage.current = true; // Reset flag for the new chat
-      console.log("New chat started");
+    setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
+    setInput('');
+    setCurrentResponseId(null); // Reset conversation continuity ID
+    setIsLoading(false);
+    setThinkingStage(0);
+    setError(null);
+    clearThinkingTimers();
+    setShowHistory(false); // Close history panel
+    isFirstUserMessage.current = true; // Reset flag for the new chat
+    setEligibilityState({ status: 'not_started' }); // Reset eligibility state
+    console.log("New chat started");
   };
 
   // When clicking a history item, just start a new chat
@@ -335,29 +434,6 @@ export default function ChatInterface() {
 
   const handleToggleHistory = () => {
       setShowHistory(prev => !prev);
-  };
-
-  const handleBookCall = () => {
-    // Set the agent type to booking
-    setCurrentAgent('booking');
-    
-    // Reset the booking info
-    setBookingInfo({ step: 'name' });
-    currentBookingStepRef.current = 'name';
-    bookingNameRef.current = null;
-    bookingPhoneRef.current = null;
-    bookingDateTimeRef.current = null;
-    
-    // Add a user message
-    const newUserMessage = { role: 'user' as const, content: "I'd like to book a call with a specialist" };
-    setMessages(prevMessages => [...prevMessages, newUserMessage]);
-    
-    // Create a new assistant message
-    const newAssistantMessage = { role: 'assistant' as const, content: "I'd be happy to help you book a call with a specialist. To get started, could you please provide your full name?" };
-    setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
-    
-    // Scroll to the bottom
-    setTimeout(scrollToBottom, 100);
   };
 
   const renderThinkingIndicator = () => {
@@ -588,6 +664,11 @@ export default function ChatInterface() {
       }
     }
   }, [currentAgent]);
+
+  // Remove the checkEligibility function
+  const checkEligibility = async (condition: string) => {
+    handleSendMessage(condition);
+  };
 
   // --- Render Function ---
   return (

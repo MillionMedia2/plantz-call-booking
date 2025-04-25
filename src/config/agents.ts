@@ -13,7 +13,7 @@ export const informationAgent = {
   instructions: systemPrompt,
   tools: [{
     type: "file_search",
-    vector_store_ids: process.env.VECTOR_STORE_IDS?.split(',').map(id => id.trim()).filter(id => id) || [],
+    vector_store_ids: [process.env.VECTOR_STORE_IDS || "vs_67a669ee3c408191b5588e966f605592"],
     max_num_results: 20
   }]
 };
@@ -71,6 +71,37 @@ Guide patients through the booking process by collecting:
         required: ["name", "phone", "dateTime"]
       }
     }
+  }]
+};
+
+// Eligibility Agent (new functionality)
+export const eligibilityAgent = {
+  name: "Eligibility Checker",
+  model: "gpt-4o-mini",
+  instructions: `## ROLE: Medical Cannabis Eligibility Checker
+
+You are a binary eligibility checker for medical cannabis prescriptions in the UK.
+
+## TASK
+Use the provided knowledge base to determine if a medical condition can be treated with medical cannabis in the UK.
+
+## INSTRUCTIONS
+1. Search the knowledge base for the condition
+2. ONLY respond with "YES" if the condition is listed as treatable with medical cannabis
+3. ONLY respond with "NO" if the condition is not listed or you're unsure
+4. Do not provide any explanations
+5. Do not ask follow-up questions
+6. Do not engage in conversation
+7. Consider common variations of condition names (e.g., "can't sleep" = "insomnia")
+
+## RESPONSE FORMAT
+- ONLY "YES" if the condition can be treated with medical cannabis in the UK
+- ONLY "NO" if the condition cannot be treated with medical cannabis in the UK
+- No other text is allowed`,
+  tools: [{
+    type: "file_search",
+    vector_store_ids: [process.env.VECTOR_STORE_IDS || "vs_67a669ee3c408191b5588e966f605592"],
+    max_num_results: 20
   }]
 };
 
