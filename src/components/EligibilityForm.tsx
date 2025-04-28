@@ -154,7 +154,7 @@ export default function EligibilityForm({ onEligibilityComplete, onCancel }: Eli
             </div>
             {treatable ? (
               <>
-                <label className="block mb-2 font-medium">Have you previously tried two treatments that didn't work?</label>
+                <label className="block mb-2 font-medium">Have you previously tried two treatments that didn&apos;t work?</label>
                 <div className="flex gap-4 mb-4">
                   <button
                     className={`flex-1 ${buttonClass} ${previousTreatments === true ? selectedButtonClass : unselectedButtonClass}`}
