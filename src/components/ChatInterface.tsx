@@ -282,8 +282,8 @@ export default function ChatInterface() {
         (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()) || /^(no|n|nope|nah)$/i.test(messageContent.trim()))
       ) {
         lastMessage.content = /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim())
-          ? "Thank you for letting us know. Let's proceed with booking your call. What is your full name?"
-          : "Great! Let's proceed with booking your call. What is your full name?";
+          ? "Thank you for letting us know. Let&apos;s proceed with booking your call. What is your full name?"
+          : "Great! Let&apos;s proceed with booking your call. What is your full name?";
         setEligibilityState(prev => ({
           ...prev,
           psychosisHistory: /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()),
@@ -366,8 +366,8 @@ export default function ChatInterface() {
           case 'psychosis_check':
             if (isYes || isNo) {
               lastMessage.content = isYes 
-                ? "Thank you for letting us know. Let's proceed with booking your call. What is your full name?"
-                : "Great! Let's proceed with booking your call. What is your full name?";
+                ? "Thank you for letting us know. Let&apos;s proceed with booking your call. What is your full name?"
+                : "Great! Let&apos;s proceed with booking your call. What is your full name?";
               setEligibilityState(prev => ({
                 ...prev,
                 psychosisHistory: isYes,
@@ -879,7 +879,7 @@ export default function ChatInterface() {
       ...prev,
       {
         role: 'assistant',
-        content: `Eligibility check complete.\n\nCondition: ${result.condition}\nTreatable: ${result.treatable ? 'Yes' : 'No'}\nTried two treatments: ${result.previousTreatments ? 'Yes' : 'No'}\nPsychosis/Schizophrenia: ${result.psychosisHistory ? 'Yes' : 'No'}\n\nLet's proceed with booking your call. What is your full name?`
+        content: `Eligibility check complete.\n\nCondition: ${result.condition}\nTreatable: ${result.treatable ? 'Yes' : 'No'}\nTried two treatments: ${result.previousTreatments ? 'Yes' : 'No'}\nPsychosis/Schizophrenia: ${result.psychosisHistory ? 'Yes' : 'No'}\n\nLet&apos;s proceed with booking your call. What is your full name?`
       }
     ]);
   };
