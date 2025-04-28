@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   // --- End Environment Variable Checks ---
 
   try {
-    const { name, phone, dateTime } = await request.json();
+    const { name, phone, dateTime, condition, twoTreatments, familyHistory } = await request.json();
 
     // Validate required fields
     if (!name || !phone || !dateTime) {
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     // Add the row to the sheet
     await sheets.spreadsheets.values.append({
       spreadsheetId: spreadsheetId, // Use checked variable
-      range: 'Sheet1!A:F', // Adjust based on your sheet name and range
+      range: 'Sheet1!A:I', // Adjust based on your sheet name and range
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [[
@@ -66,6 +66,9 @@ export async function POST(request: Request) {
           name,                     // Name
           `'${phone}`,              // Phone (add a single quote to force text format)
           dateTime,                 // DateTime
+          condition || '',          // Condition
+          twoTreatments || '',      // Two Treatments (Yes/No)
+          familyHistory || '',      // Family History (Yes/No)
           'Pending',                // Status
           ''                        // Notes
         ]],

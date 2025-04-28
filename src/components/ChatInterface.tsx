@@ -7,6 +7,7 @@ import debounce from 'lodash/debounce';
 import styles from './ChatInterface.module.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
+import EligibilityForm from './EligibilityForm';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,7 +26,10 @@ type AgentType = 'information' | 'eligibility' | 'booking';
 
 interface EligibilityState {
   status: 'not_started' | 'in_progress' | 'passed' | 'failed';
+  currentQuestion: 'condition' | 'previous_treatments' | 'psychosis_check' | 'complete';
   condition?: string;
+  previousTreatments?: boolean;
+  psychosisHistory?: boolean;
 }
 
 export default function ChatInterface() {
@@ -39,7 +43,10 @@ export default function ChatInterface() {
   const [chatHistory, setChatHistory] = useState<HistoryItem[]>([]);
   const [currentAgent, setCurrentAgent] = useState<AgentType>('information');
   const [isBooking, setIsBooking] = useState(false);
-  const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ status: 'not_started' });
+  const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ 
+    status: 'not_started',
+    currentQuestion: 'condition'
+  });
 
   const thinkingTimer1 = useRef<number | null>(null);
   const thinkingTimer2 = useRef<number | null>(null);
@@ -48,7 +55,7 @@ export default function ChatInterface() {
   const abortController = useRef<AbortController | null>(null);
   const messageCache = useRef<Map<string, Response>>(new Map());
 
-  const TIMEOUT_MS = 30000;
+  const TIMEOUT_MS = 60000;
   const MAX_RETRIES = 3;
   const INITIAL_RETRY_DELAY = 1000;
 
@@ -67,6 +74,17 @@ export default function ChatInterface() {
   const bookingNameRef = useRef<string | null>(null);
   const bookingPhoneRef = useRef<string | null>(null);
   const bookingDateTimeRef = useRef<string | null>(null);
+
+  // Add state to store eligibility summary
+  const [eligibilitySummary, setEligibilitySummary] = useState<null | {
+    condition: string;
+    treatable: boolean;
+    previousTreatments: boolean;
+    psychosisHistory: boolean;
+  }>(null);
+
+  // Add bookingError state
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   // Cleanup function for SSE and timeouts
   useEffect(() => {
@@ -159,7 +177,10 @@ export default function ChatInterface() {
   const sendMessageWithRetry = async (messageContent: string, retryCount = 0, agentType?: AgentType): Promise<Response> => {
     console.log("sendMessageWithRetry - currentAgent:", agentType || currentAgent);
     abortController.current = new AbortController();
-    const timeoutId = setTimeout(() => abortController.current?.abort(), TIMEOUT_MS);
+    const timeoutId = setTimeout(() => {
+      console.log("Request timeout triggered - aborting request");
+      abortController.current?.abort();
+    }, TIMEOUT_MS);
 
     try {
       const cacheKey = `${messageContent}-${currentResponseId}-${agentType || currentAgent}`;
@@ -182,6 +203,7 @@ export default function ChatInterface() {
 
       if (!response.ok && retryCount < MAX_RETRIES) {
         const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
+        console.log(`Request failed, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return sendMessageWithRetry(messageContent, retryCount + 1, agentType);
       }
@@ -205,7 +227,10 @@ export default function ChatInterface() {
 
   const handleAgentSwitch = (agent: AgentType) => {
     if (agent === 'eligibility') {
-      setEligibilityState({ status: 'in_progress' });
+      setEligibilityState({ 
+        status: 'in_progress',
+        currentQuestion: 'condition'
+      });
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: 'Before we can book your call, I need to check your eligibility. What condition do you want to treat with cannabis?'
@@ -213,6 +238,150 @@ export default function ChatInterface() {
     }
     setCurrentAgent(agent);
   };
+
+  const handleEligibilityResponse = useCallback((response: string, messageContent: string) => {
+    const normalizedResponse = response.trim().toLowerCase();
+    const isYes = /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(normalizedResponse);
+    const isNo = /^(no|n|nope|nah)$/i.test(normalizedResponse);
+
+    setMessages(prev => {
+      const updatedMessages = [...prev];
+      const lastMessage = updatedMessages[updatedMessages.length - 1];
+      const currentQuestionText = eligibilityState.currentQuestion === 'previous_treatments'
+        ? "Have you previously tried two treatments that didn't work?"
+        : eligibilityState.currentQuestion === 'psychosis_check'
+          ? "Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?"
+          : '';
+
+      // Fallback: If the agent's response contains the current question and the user input was yes/no, treat as valid
+      if (
+        eligibilityState.currentQuestion === 'previous_treatments' &&
+        response.trim().toLowerCase().includes(currentQuestionText.toLowerCase())
+      ) {
+        if (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim())) {
+          if (lastMessage) lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
+          setEligibilityState(prev => ({
+            ...prev,
+            previousTreatments: true,
+            currentQuestion: 'psychosis_check'
+          }));
+          return updatedMessages;
+        } else if (/^(no|n|nope|nah)$/i.test(messageContent.trim())) {
+          if (lastMessage) lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
+          setEligibilityState(prev => ({
+            ...prev,
+            previousTreatments: false,
+            currentQuestion: 'psychosis_check'
+          }));
+          return updatedMessages;
+        }
+      }
+      // Final fallback: If on psychosis_check and user input is yes/no, always proceed to booking
+      if (
+        eligibilityState.currentQuestion === 'psychosis_check' &&
+        (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()) || /^(no|n|nope|nah)$/i.test(messageContent.trim()))
+      ) {
+        lastMessage.content = /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim())
+          ? "Thank you for letting us know. Let's proceed with booking your call. What is your full name?"
+          : "Great! Let's proceed with booking your call. What is your full name?";
+        setEligibilityState(prev => ({
+          ...prev,
+          psychosisHistory: /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()),
+          currentQuestion: 'complete',
+          status: 'passed'
+        }));
+        setCurrentAgent('booking');
+        return updatedMessages;
+      }
+
+      if (lastMessage) {
+        switch (eligibilityState.currentQuestion) {
+          case 'condition':
+            if (isYes) {
+              // Only remove the last message if it's an assistant message with a raw YES/NO
+              if (
+                updatedMessages.length > 0 &&
+                updatedMessages[updatedMessages.length - 1].role === 'assistant' &&
+                /^(yes|no)$/i.test(updatedMessages[updatedMessages.length - 1].content.trim())
+              ) {
+                updatedMessages.pop();
+                updatedMessages.push({
+                  role: 'assistant',
+                  content: `Great, ${messageContent} can be treated with cannabis. Have you previously tried two treatments that didn't work?`
+                });
+              } else {
+                // If the last message is a user message, just append the assistant message
+                updatedMessages.push({
+                  role: 'assistant',
+                  content: `Great, ${messageContent} can be treated with cannabis. Have you previously tried two treatments that didn't work?`
+                });
+              }
+              setEligibilityState(prev => ({
+                ...prev,
+                condition: messageContent,
+                currentQuestion: 'previous_treatments'
+              }));
+            } else if (isNo) {
+              if (
+                updatedMessages.length > 0 &&
+                updatedMessages[updatedMessages.length - 1].role === 'assistant' &&
+                /^(yes|no)$/i.test(updatedMessages[updatedMessages.length - 1].content.trim())
+              ) {
+                updatedMessages.pop();
+                updatedMessages.push({
+                  role: 'assistant',
+                  content: `I'm sorry, ${messageContent} is not currently treatable with cannabis in the UK. Would you like to ask about other conditions?`
+                });
+              } else {
+                updatedMessages.push({
+                  role: 'assistant',
+                  content: `I'm sorry, ${messageContent} is not currently treatable with cannabis in the UK. Would you like to ask about other conditions?`
+                });
+              }
+              setEligibilityState(prev => ({
+                ...prev,
+                status: 'failed'
+              }));
+            }
+            break;
+
+          case 'previous_treatments':
+            if (isYes) {
+              lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
+              setEligibilityState(prev => ({
+                ...prev,
+                previousTreatments: true,
+                currentQuestion: 'psychosis_check'
+              }));
+            } else if (isNo) {
+              lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
+              setEligibilityState(prev => ({
+                ...prev,
+                previousTreatments: false,
+                currentQuestion: 'psychosis_check'
+              }));
+            }
+            break;
+
+          case 'psychosis_check':
+            if (isYes || isNo) {
+              lastMessage.content = isYes 
+                ? "Thank you for letting us know. Let's proceed with booking your call. What is your full name?"
+                : "Great! Let's proceed with booking your call. What is your full name?";
+              setEligibilityState(prev => ({
+                ...prev,
+                psychosisHistory: isYes,
+                currentQuestion: 'complete',
+                status: 'passed'
+              }));
+              setCurrentAgent('booking');
+            }
+            break;
+        }
+      }
+      return updatedMessages;
+    });
+  }, [eligibilityState.currentQuestion]);
 
   const handleBookCall = () => {
     // Set the agent type to eligibility
@@ -335,6 +504,8 @@ export default function ChatInterface() {
                             } else if (chunk.type === 'response.completed' && chunk.response?.id) {
                                 console.log("Response completed, ID:", chunk.response.id);
                                 responseIdReceived = chunk.response.id;
+                            } else if (chunk.type === 'response.in_progress') {
+                                console.log("Response in progress, waiting for vector store results...");
                             }
                         } catch (e) {
                             console.error("Failed to parse SSE chunk:", line, e);
@@ -359,19 +530,7 @@ export default function ChatInterface() {
         // Handle agent transitions after stream is complete
         if (currentAgent === 'eligibility') {
             console.log("Handling eligibility response:", assistantResponse);
-            const response = assistantResponse.trim();
-            if (response === 'YES') {
-                console.log("Eligibility check passed, switching to booking");
-                setCurrentAgent('booking');
-                setMessages(prev => {
-                    const updatedMessages = [...prev];
-                    const lastMessage = updatedMessages[updatedMessages.length - 1];
-                    if (lastMessage) {
-                        lastMessage.content = `OK, ${messageContent} can be treated with cannabis so let's book a call. What is your full name?`;
-                    }
-                    return updatedMessages;
-                });
-            }
+            handleEligibilityResponse(assistantResponse, messageContent);
         }
 
     } catch (error: unknown) {
@@ -384,7 +543,7 @@ export default function ChatInterface() {
         stopThinkingIndicator();
         setIsLoading(false);
     }
-  }, [currentResponseId, isLoading, currentAgent]);
+  }, [currentResponseId, isLoading, currentAgent, eligibilityState.currentQuestion, handleEligibilityResponse]);
 
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -405,7 +564,18 @@ export default function ChatInterface() {
     clearThinkingTimers();
     setShowHistory(false); // Close history panel
     isFirstUserMessage.current = true; // Reset flag for the new chat
-    setEligibilityState({ status: 'not_started' }); // Reset eligibility state
+    setEligibilityState({ 
+      status: 'not_started',
+      currentQuestion: 'condition'
+    }); // Reset eligibility state
+    setCurrentAgent('information'); // Always reset to information agent
+    setEligibilitySummary(null); // Clear eligibility summary
+    setBookingInfo({ step: 'name' }); // Reset booking info
+    currentBookingStepRef.current = 'name';
+    bookingNameRef.current = null;
+    bookingPhoneRef.current = null;
+    bookingDateTimeRef.current = null;
+    setBookingError(null); // Clear booking error
     console.log("New chat started");
   };
 
@@ -468,6 +638,7 @@ export default function ChatInterface() {
                   (!/\d/.test(messageContent) ? messageContent.trim() : null);
       
       if (name) {
+        setBookingError(null);
         console.log('Name extracted:', name);
         // Update both the state and the refs
         setBookingInfo(prev => ({ ...prev, name, step: 'phone' }));
@@ -492,6 +663,7 @@ export default function ChatInterface() {
       
       // Check if the cleaned message contains at least 10 digits
       if (cleanedMessage.length >= 10) {
+        setBookingError(null);
         // Extract the first 11 digits (or more if provided)
         // Make sure to preserve the leading zero
         const phone = cleanedMessage.substring(0, 11);
@@ -507,6 +679,14 @@ export default function ChatInterface() {
           content: "Great! What date and time would you prefer for the call? Please note, appointments are available Monday to Friday, between 9am and 5pm UK time. (e.g., 'tomorrow at 2pm' or 'next Monday at 10am')" 
         };
         setMessages(prev => [...prev, dateTimeMessage]);
+        return;
+      } else {
+        setBookingError('Please enter a valid phone number with 11 digits.');
+        const errorMsg = {
+          role: 'assistant' as const,
+          content: 'The phone number you entered is invalid. Please enter a valid phone number with 11 digits.'
+        };
+        setMessages(prev => [...prev, errorMsg]);
         return;
       }
     }
@@ -583,11 +763,24 @@ export default function ChatInterface() {
             console.error('Missing required information:', { name, phone, dateTime });
             throw new Error('Missing required information for booking');
           }
-          
+
+          // Prepare eligibility fields
+          let condition = '';
+          let twoTreatments = '';
+          let familyHistory = '';
+          if (eligibilitySummary) {
+            condition = eligibilitySummary.condition || '';
+            twoTreatments = eligibilitySummary.previousTreatments ? 'Yes' : 'No';
+            familyHistory = eligibilitySummary.psychosisHistory ? 'Yes' : 'No';
+          }
+
           console.log('Attempting to book call with:', { 
             name, 
             phone, 
-            dateTime 
+            dateTime,
+            condition,
+            twoTreatments,
+            familyHistory
           });
           
           // Call the booking API - use the /api/sheets endpoint for Google Sheets integration
@@ -599,7 +792,10 @@ export default function ChatInterface() {
             body: JSON.stringify({ 
               name, 
               phone, 
-              dateTime 
+              dateTime,
+              condition,
+              twoTreatments,
+              familyHistory
             }),
           });
           
@@ -668,6 +864,34 @@ export default function ChatInterface() {
   // Remove the checkEligibility function
   const checkEligibility = async (condition: string) => {
     handleSendMessage(condition);
+  };
+
+  // Handler for eligibility form completion
+  const handleEligibilityComplete = (result: {
+    condition: string;
+    treatable: boolean;
+    previousTreatments: boolean;
+    psychosisHistory: boolean;
+  }) => {
+    setEligibilitySummary(result);
+    setCurrentAgent('booking');
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `Eligibility check complete.\n\nCondition: ${result.condition}\nTreatable: ${result.treatable ? 'Yes' : 'No'}\nTried two treatments: ${result.previousTreatments ? 'Yes' : 'No'}\nPsychosis/Schizophrenia: ${result.psychosisHistory ? 'Yes' : 'No'}\n\nLet's proceed with booking your call. What is your full name?`
+      }
+    ]);
+  };
+
+  // Handler for eligibility form cancel
+  const handleEligibilityCancel = () => {
+    setCurrentAgent('information');
+    setEligibilitySummary(null);
+    setMessages(prev => [
+      ...prev,
+      { role: 'assistant', content: 'Eligibility check cancelled. You can continue asking questions.' }
+    ]);
   };
 
   // --- Render Function ---
@@ -778,32 +1002,47 @@ export default function ChatInterface() {
         </div>
       </div>
 
-      {/* Input */}
-      <div className="flex items-center gap-2 p-4 border-t border-gray-200">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
-          placeholder="Type your message..."
-          className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={isBooking}
+      {/* Eligibility Form for Eligibility Agent */}
+      {currentAgent === 'eligibility' && (
+        <EligibilityForm
+          onEligibilityComplete={handleEligibilityComplete}
+          onCancel={handleEligibilityCancel}
         />
-        <button
-          onClick={() => handleSendMessage(input)}
-          disabled={isBooking}
-          className="p-2 text-white bg-hubbot-hover rounded-lg hover:bg-hubbot-blue focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-        >
-          {isBooking ? (
-            <div className="flex items-center gap-2">
-              <FiLoader className="animate-spin" />
-              <span>Booking...</span>
-            </div>
-          ) : (
-            <FiSend />
+      )}
+
+      {/* Input (hide if eligibility agent) */}
+      {currentAgent !== 'eligibility' && (
+        <div className="flex flex-col w-full">
+          <div className="flex items-center gap-2 p-4 border-t border-gray-200">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
+              placeholder="Type your message..."
+              className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isBooking}
+            />
+            <button
+              onClick={() => handleSendMessage(input)}
+              disabled={isBooking}
+              className="p-2 text-white bg-hubbot-hover rounded-lg hover:bg-hubbot-blue focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {isBooking ? (
+                <div className="flex items-center gap-2">
+                  <FiLoader className="animate-spin" />
+                  <span>Booking...</span>
+                </div>
+              ) : (
+                <FiSend />
+              )}
+            </button>
+          </div>
+          {isBooking && bookingError && (
+            <div className="text-sm text-red-600 px-4 pb-2">{bookingError}</div>
           )}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
