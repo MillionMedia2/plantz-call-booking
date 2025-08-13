@@ -41,6 +41,7 @@ npm install
 ```
 OPENAI_API_KEY=your_openai_api_key
 VECTOR_STORE_IDS=your_vector_store_ids
+AIRTABLE_API_KEY=your_airtable_api_key
 AIRTABLE_APPOINTMENTS_BASE=your_airtable_base_id
 AIRTABLE_APPOINTMENTS_BOOKINGS=your_airtable_table_id
 OPENAI_ASSISTANT_KEY=your_openai_assistant_id

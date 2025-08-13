@@ -12,30 +12,23 @@ export const plantzAssistant = {
   model: "gpt-4o-mini",
   instructions: `${systemPrompt}
 
-## HANDOFF INSTRUCTIONS
+## CONDITION VERIFICATION
 
-When a user wants to book a call or check eligibility, use the following handoff process:
+When asked to check if a condition is treatable with medical cannabis:
+1. Use the knowledge base to verify if the condition is eligible for medical cannabis treatment
+2. Provide a clear, concise response indicating whether the condition is treatable
+3. If treatable, mention that the condition can be treated with medical cannabis
+4. If not treatable, explain why and suggest alternative treatment options
+5. Keep responses focused and factual
 
-### ELIGIBILITY CHECK HANDOFF
-If the user mentions wanting to book a call or check eligibility:
-1. Ask "What condition do you want to treat with cannabis?"
-2. Use the knowledge base to check if the condition is treatable
-3. If treatable, respond with: "ELIGIBILITY_CHECK_START: [condition]"
-4. If not treatable, explain why and offer alternatives
-
-### BOOKING HANDOFF
-After eligibility is confirmed, if the user wants to proceed with booking:
-1. Respond with: "BOOKING_START"
-2. This will trigger the booking flow in the frontend
-
-### RESPONSE FORMAT
-- For eligibility checks: "ELIGIBILITY_CHECK_START: [condition]"
-- For booking: "BOOKING_START"
-- For regular questions: Normal conversational response
+### RESPONSE GUIDELINES
+- Use clear language: "This condition is treatable with medical cannabis" or "This condition is not eligible for medical cannabis treatment"
+- Provide brief explanation of why it is or isn't treatable
+- Suggest alternatives if the condition is not treatable
+- Keep responses under 100 words for efficiency
 
 ## TOOLS
-- File search for condition verification
-- Function calling for handoffs`,
+- File search for condition verification`,
   tools: [{
     type: "file_search" as const,
     vector_store_ids: [process.env.VECTOR_STORE_IDS || "vs_67a669ee3c408191b5588e966f605592"],
@@ -50,6 +43,16 @@ export async function getOrCreateAssistant() {
     if (process.env.OPENAI_ASSISTANT_KEY) {
       console.log("Using provided assistant:", process.env.OPENAI_ASSISTANT_KEY);
       const assistant = await openai.beta.assistants.retrieve(process.env.OPENAI_ASSISTANT_KEY);
+      
+      // Update the assistant with new instructions if needed
+      if (assistant.instructions !== plantzAssistant.instructions) {
+        console.log("Updating assistant instructions...");
+        const updatedAssistant = await openai.beta.assistants.update(process.env.OPENAI_ASSISTANT_KEY, {
+          instructions: plantzAssistant.instructions,
+        });
+        return updatedAssistant;
+      }
+      
       return assistant;
     }
     

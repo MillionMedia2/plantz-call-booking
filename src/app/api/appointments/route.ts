@@ -12,9 +12,18 @@ export async function POST(request: NextRequest) {
     const { name, phone, condition, twoTreatments, psychosisHistory, date, time } = await request.json();
 
     // Validate required fields
-    if (!name || !phone || !condition || !twoTreatments || !psychosisHistory || !date || !time) {
+    const missingFields = [];
+    if (!name) missingFields.push('name');
+    if (!phone) missingFields.push('phone');
+    if (!condition) missingFields.push('condition');
+    if (!twoTreatments) missingFields.push('twoTreatments');
+    if (!psychosisHistory) missingFields.push('psychosisHistory');
+    if (!date) missingFields.push('date');
+    if (!time) missingFields.push('time');
+
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: `Missing required fields: ${missingFields.join(', ')}` },
         { status: 400 }
       );
     }
@@ -75,8 +84,14 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('Error booking appointment:', error);
+    
+    let errorMessage = 'Internal server error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

@@ -210,21 +210,15 @@ export default function ChatInterface() {
     setCurrentAgent(agent);
   };
 
-  const handleBookingStart = useCallback((condition: string) => {
-    setBookingState({
-      status: 'in_progress',
-      condition: condition
-    });
-    setIsBooking(true);
-  }, []);
+
 
   const handleBookCall = () => {
-    // Add a user message
-    const newUserMessage = { role: 'user' as const, content: "I'd like to book a call with a specialist" };
-    setMessages(prevMessages => [...prevMessages, newUserMessage]);
-    
-    // Send the message to the assistant
-    handleSendMessage("I'd like to book a call with a specialist");
+    // Directly start the booking flow without calling the assistant
+    setBookingState({
+      status: 'in_progress',
+      condition: ''
+    });
+    setIsBooking(true);
   };
 
   const handleSendMessage = useCallback(async (messageContent: string) => {
@@ -341,15 +335,7 @@ export default function ChatInterface() {
         console.log("Stream processing finished");
 
                 // Check for handoff triggers in the response
-        if (assistantResponse.includes('ELIGIBILITY_CHECK_START:')) {
-          const conditionMatch = assistantResponse.match(/ELIGIBILITY_CHECK_START:\s*(.+)/);
-          if (conditionMatch) {
-            const condition = conditionMatch[1].trim();
-            handleBookingStart(condition);
-          }
-        } else if (assistantResponse.includes('BOOKING_START')) {
-          handleBookingStart(bookingState.condition || '');
-        }
+        // Remove the old booking start logic since we handle it directly now
 
     } catch (error: unknown) {
         console.error("Stream error details:", error);
@@ -361,7 +347,7 @@ export default function ChatInterface() {
         stopThinkingIndicator();
         setIsLoading(false);
     }
-  }, [isLoading, threadId, handleBookingStart]);
+  }, [isLoading, threadId]);
 
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -428,6 +414,75 @@ export default function ChatInterface() {
     if (thinkingStage === 3) { icon = <FiClock className="animate-pulse mr-2" />; text = "Nearly there..."; }
     return (<div className="flex items-center justify-center text-sm text-gray-500 my-2">{icon}<span>{text}</span></div>);
   };
+
+  const handleConditionCheck = useCallback(async (condition: string): Promise<boolean> => {
+    try {
+      // Send the condition to the assistant for verification
+      const response = await sendMessageWithRetry(`Check if this condition is treatable with medical cannabis: ${condition}`, 0);
+      
+      if (!response.ok) {
+        throw new Error('Failed to verify condition');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let assistantResponse = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonString = line.substring(6);
+              const data = JSON.parse(jsonString);
+              
+              if (data.type === 'response.output_text.delta') {
+                assistantResponse += data.delta;
+              } else if (data.type === 'response.completed') {
+                break;
+              }
+            } catch (e) {
+              // Ignore parsing errors for incomplete chunks
+            }
+          }
+        }
+      }
+
+      // Check if the response indicates the condition is treatable
+      const treatableKeywords = ['treatable', 'eligible', 'can be treated', 'suitable', 'appropriate'];
+      const notTreatableKeywords = ['not treatable', 'not eligible', 'cannot be treated', 'not suitable', 'not appropriate'];
+      
+      const responseLower = assistantResponse.toLowerCase();
+      
+      // Check for negative indicators first
+      for (const keyword of notTreatableKeywords) {
+        if (responseLower.includes(keyword)) {
+          return false;
+        }
+      }
+      
+      // Check for positive indicators
+      for (const keyword of treatableKeywords) {
+        if (responseLower.includes(keyword)) {
+          return true;
+        }
+      }
+      
+      // Default to treatable if no clear indicators
+      return true;
+    } catch (error) {
+      console.error('Error checking condition:', error);
+      // Default to treatable if verification fails
+      return true;
+    }
+  }, [sendMessageWithRetry]);
 
   const handleBookingComplete = useCallback((bookingData: any) => {
     // Add success message
@@ -571,13 +626,14 @@ export default function ChatInterface() {
       </div>
 
       {/* Booking Flow */}
-      {isBooking && (
-        <BookingFlow
-          onComplete={handleBookingComplete}
-          onCancel={handleBookingCancel}
-          condition={bookingState.condition}
-        />
-      )}
+                            {isBooking && (
+                        <BookingFlow
+                          onComplete={handleBookingComplete}
+                          onCancel={handleBookingCancel}
+                          onConditionCheck={handleConditionCheck}
+                          condition={bookingState.condition}
+                        />
+                      )}
 
       {/* Input (hide if booking) */}
       {!isBooking && (
