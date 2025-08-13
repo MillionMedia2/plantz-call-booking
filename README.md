@@ -4,9 +4,10 @@ A Next.js application that provides a chat interface for medical cannabis inform
 
 ## Features
 
-- Chat interface with medical cannabis information
+- Chat interface with medical cannabis information using OpenAI Assistants API
 - File search integration for knowledge base
-- Call booking functionality (coming soon)
+- Automated eligibility checking and call booking
+- Airtable integration for appointment management
 - Responsive design for mobile and desktop
 
 ## Tech Stack
@@ -40,6 +41,9 @@ npm install
 ```
 OPENAI_API_KEY=your_openai_api_key
 VECTOR_STORE_IDS=your_vector_store_ids
+AIRTABLE_APPOINTMENTS_BASE=your_airtable_base_id
+AIRTABLE_APPOINTMENTS_BOOKINGS=your_airtable_table_id
+OPENAI_ASSISTANT_KEY=your_openai_assistant_id
 ```
 
 4. Run the development server

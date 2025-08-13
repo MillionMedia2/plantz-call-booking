@@ -7,7 +7,7 @@ import debounce from 'lodash/debounce';
 import styles from './ChatInterface.module.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
-import EligibilityForm from './EligibilityForm';
+import BookingFlow from './BookingFlow';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -22,14 +22,11 @@ interface HistoryItem {
 
 const LOCAL_STORAGE_KEY = 'plantzAgentChatHistory';
 
-type AgentType = 'information' | 'eligibility' | 'booking';
+type AgentType = 'information' | 'booking';
 
-interface EligibilityState {
-  status: 'not_started' | 'in_progress' | 'passed' | 'failed';
-  currentQuestion: 'condition' | 'previous_treatments' | 'psychosis_check' | 'complete';
+interface BookingState {
+  status: 'not_started' | 'in_progress' | 'complete';
   condition?: string;
-  previousTreatments?: boolean;
-  psychosisHistory?: boolean;
 }
 
 export default function ChatInterface() {
@@ -43,10 +40,10 @@ export default function ChatInterface() {
   const [chatHistory, setChatHistory] = useState<HistoryItem[]>([]);
   const [currentAgent, setCurrentAgent] = useState<AgentType>('information');
   const [isBooking, setIsBooking] = useState(false);
-  const [eligibilityState, setEligibilityState] = useState<EligibilityState>({ 
-    status: 'not_started',
-    currentQuestion: 'condition'
+  const [bookingState, setBookingState] = useState<BookingState>({ 
+    status: 'not_started'
   });
+  const [threadId, setThreadId] = useState<string | null>(null);
 
   const thinkingTimer1 = useRef<number | null>(null);
   const thinkingTimer2 = useRef<number | null>(null);
@@ -66,22 +63,6 @@ export default function ChatInterface() {
     dateTime?: string;
     step: 'name' | 'phone' | 'dateTime' | 'complete';
   }>({ step: 'name' });
-
-  // Add a ref to track the current booking step
-  const currentBookingStepRef = useRef<'name' | 'phone' | 'dateTime' | 'complete'>('name');
-  
-  // Add refs to track booking information
-  const bookingNameRef = useRef<string | null>(null);
-  const bookingPhoneRef = useRef<string | null>(null);
-  const bookingDateTimeRef = useRef<string | null>(null);
-
-  // Add state to store eligibility summary
-  const [eligibilitySummary, setEligibilitySummary] = useState<null | {
-    condition: string;
-    treatable: boolean;
-    previousTreatments: boolean;
-    psychosisHistory: boolean;
-  }>(null);
 
   // Add bookingError state
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -174,8 +155,8 @@ export default function ChatInterface() {
       clearThinkingTimers();
   };
 
-  const sendMessageWithRetry = async (messageContent: string, retryCount = 0, agentType?: AgentType): Promise<Response> => {
-    console.log("sendMessageWithRetry - currentAgent:", agentType || currentAgent);
+  const sendMessageWithRetry = async (messageContent: string, retryCount = 0): Promise<Response> => {
+    console.log("sendMessageWithRetry - threadId:", threadId);
     abortController.current = new AbortController();
     const timeoutId = setTimeout(() => {
       console.log("Request timeout triggered - aborting request");
@@ -183,20 +164,20 @@ export default function ChatInterface() {
     }, TIMEOUT_MS);
 
     try {
-      const cacheKey = `${messageContent}-${currentResponseId}-${agentType || currentAgent}`;
+      const cacheKey = `${messageContent}-${threadId}`;
       const cachedResponse = messageCache.current.get(cacheKey);
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      console.log("Sending API request with agent_type:", agentType || currentAgent);
+      console.log("Sending API request with threadId:", threadId);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: messageContent,
-          previous_response_id: currentResponseId,
-          agent_type: agentType || currentAgent
+          threadId: threadId,
+          previous_response_id: currentResponseId
         }),
         signal: abortController.current.signal,
       });
@@ -205,7 +186,7 @@ export default function ChatInterface() {
         const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
         console.log(`Request failed, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        return sendMessageWithRetry(messageContent, retryCount + 1, agentType);
+        return sendMessageWithRetry(messageContent, retryCount + 1);
       }
 
       messageCache.current.set(cacheKey, response.clone());
@@ -226,187 +207,27 @@ export default function ChatInterface() {
   };
 
   const handleAgentSwitch = (agent: AgentType) => {
-    if (agent === 'eligibility') {
-      setEligibilityState({ 
-        status: 'in_progress',
-        currentQuestion: 'condition'
-      });
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Before we can book your call, I need to check your eligibility. What condition do you want to treat with cannabis?'
-      }]);
-    }
     setCurrentAgent(agent);
   };
 
-  const handleEligibilityResponse = useCallback((response: string, messageContent: string) => {
-    const normalizedResponse = response.trim().toLowerCase();
-    const isYes = /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(normalizedResponse);
-    const isNo = /^(no|n|nope|nah)$/i.test(normalizedResponse);
-
-    setMessages(prev => {
-      const updatedMessages = [...prev];
-      const lastMessage = updatedMessages[updatedMessages.length - 1];
-      const currentQuestionText = eligibilityState.currentQuestion === 'previous_treatments'
-        ? "Have you previously tried two treatments that didn't work?"
-        : eligibilityState.currentQuestion === 'psychosis_check'
-          ? "Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?"
-          : '';
-
-      // Fallback: If the agent's response contains the current question and the user input was yes/no, treat as valid
-      if (
-        eligibilityState.currentQuestion === 'previous_treatments' &&
-        response.trim().toLowerCase().includes(currentQuestionText.toLowerCase())
-      ) {
-        if (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim())) {
-          if (lastMessage) lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
-          setEligibilityState(prev => ({
-            ...prev,
-            previousTreatments: true,
-            currentQuestion: 'psychosis_check'
-          }));
-          return updatedMessages;
-        } else if (/^(no|n|nope|nah)$/i.test(messageContent.trim())) {
-          if (lastMessage) lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
-          setEligibilityState(prev => ({
-            ...prev,
-            previousTreatments: false,
-            currentQuestion: 'psychosis_check'
-          }));
-          return updatedMessages;
-        }
-      }
-      // Final fallback: If on psychosis_check and user input is yes/no, always proceed to booking
-      if (
-        eligibilityState.currentQuestion === 'psychosis_check' &&
-        (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()) || /^(no|n|nope|nah)$/i.test(messageContent.trim()))
-      ) {
-        lastMessage.content = /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim())
-          ? "Thank you for letting us know. Let&apos;s proceed with booking your call. What is your full name?"
-          : "Great! Let&apos;s proceed with booking your call. What is your full name?";
-        setEligibilityState(prev => ({
-          ...prev,
-          psychosisHistory: /^(yes|y|yeah|yep|sure|ok|okay)$/i.test(messageContent.trim()),
-          currentQuestion: 'complete',
-          status: 'passed'
-        }));
-        setCurrentAgent('booking');
-        return updatedMessages;
-      }
-
-      if (lastMessage) {
-        switch (eligibilityState.currentQuestion) {
-          case 'condition':
-            if (isYes) {
-              // Only remove the last message if it's an assistant message with a raw YES/NO
-              if (
-                updatedMessages.length > 0 &&
-                updatedMessages[updatedMessages.length - 1].role === 'assistant' &&
-                /^(yes|no)$/i.test(updatedMessages[updatedMessages.length - 1].content.trim())
-              ) {
-                updatedMessages.pop();
-                updatedMessages.push({
-                  role: 'assistant',
-                  content: `Great, ${messageContent} can be treated with cannabis. Have you previously tried two treatments that didn't work?`
-                });
-              } else {
-                // If the last message is a user message, just append the assistant message
-                updatedMessages.push({
-                  role: 'assistant',
-                  content: `Great, ${messageContent} can be treated with cannabis. Have you previously tried two treatments that didn't work?`
-                });
-              }
-              setEligibilityState(prev => ({
-                ...prev,
-                condition: messageContent,
-                currentQuestion: 'previous_treatments'
-              }));
-            } else if (isNo) {
-              if (
-                updatedMessages.length > 0 &&
-                updatedMessages[updatedMessages.length - 1].role === 'assistant' &&
-                /^(yes|no)$/i.test(updatedMessages[updatedMessages.length - 1].content.trim())
-              ) {
-                updatedMessages.pop();
-                updatedMessages.push({
-                  role: 'assistant',
-                  content: `I'm sorry, ${messageContent} is not currently treatable with cannabis in the UK. Would you like to ask about other conditions?`
-                });
-              } else {
-                updatedMessages.push({
-                  role: 'assistant',
-                  content: `I'm sorry, ${messageContent} is not currently treatable with cannabis in the UK. Would you like to ask about other conditions?`
-                });
-              }
-              setEligibilityState(prev => ({
-                ...prev,
-                status: 'failed'
-              }));
-            }
-            break;
-
-          case 'previous_treatments':
-            if (isYes) {
-              lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
-              setEligibilityState(prev => ({
-                ...prev,
-                previousTreatments: true,
-                currentQuestion: 'psychosis_check'
-              }));
-            } else if (isNo) {
-              lastMessage.content = "Thank you. Have you, or an immediate family member, been diagnosed with psychosis or schizophrenia?";
-              setEligibilityState(prev => ({
-                ...prev,
-                previousTreatments: false,
-                currentQuestion: 'psychosis_check'
-              }));
-            }
-            break;
-
-          case 'psychosis_check':
-            if (isYes || isNo) {
-              lastMessage.content = isYes 
-                ? "Thank you for letting us know. Let&apos;s proceed with booking your call. What is your full name?"
-                : "Great! Let&apos;s proceed with booking your call. What is your full name?";
-              setEligibilityState(prev => ({
-                ...prev,
-                psychosisHistory: isYes,
-                currentQuestion: 'complete',
-                status: 'passed'
-              }));
-              setCurrentAgent('booking');
-            }
-            break;
-        }
-      }
-      return updatedMessages;
+  const handleBookingStart = useCallback((condition: string) => {
+    setBookingState({
+      status: 'in_progress',
+      condition: condition
     });
-  }, [eligibilityState.currentQuestion]);
+    setIsBooking(true);
+  }, []);
 
   const handleBookCall = () => {
-    // Set the agent type to eligibility
-    setCurrentAgent('eligibility');
-    
-    // Reset the booking info
-    setBookingInfo({ step: 'name' });
-    currentBookingStepRef.current = 'name';
-    bookingNameRef.current = null;
-    bookingPhoneRef.current = null;
-    bookingDateTimeRef.current = null;
-    
     // Add a user message
     const newUserMessage = { role: 'user' as const, content: "I'd like to book a call with a specialist" };
     setMessages(prevMessages => [...prevMessages, newUserMessage]);
     
-    // Create a new assistant message
-    const newAssistantMessage = { role: 'assistant' as const, content: "Before we can book your call, I need to check your eligibility. What condition do you want to treat with cannabis?" };
-    setMessages(prevMessages => [...prevMessages, newAssistantMessage]);
-    
-    // Scroll to the bottom
-    setTimeout(scrollToBottom, 100);
+    // Send the message to the assistant
+    handleSendMessage("I'd like to book a call with a specialist");
   };
 
-  const handleSendMessage = useCallback(async (messageContent: string, agentType?: AgentType) => {
+  const handleSendMessage = useCallback(async (messageContent: string) => {
     if (!messageContent.trim() || isLoading) return;
 
     setError(null);
@@ -423,23 +244,13 @@ export default function ChatInterface() {
     setMessages(prevMessages => [...prevMessages, newUserMessage]);
     setInput('');
 
-    // If we're in booking mode, check if the message contains booking information
-    if (currentAgent === 'booking') {
-      handleBookingProcess(messageContent);
-      setIsLoading(false);
-      stopThinkingIndicator();
-      return;
-    }
-
     let assistantResponse = '';
-    let responseIdReceived: string | null = null;
     let assistantMessageIndex = -1;
+    let newThreadId = threadId;
 
     try {
-        // Use the provided agentType or fall back to currentAgent
-        const response = await sendMessageWithRetry(messageContent, 0, agentType);
+        const response = await sendMessageWithRetry(messageContent, 0);
         console.log("Initial response received:", response.status);
-        console.log("Response headers:", Object.fromEntries(response.headers.entries()));
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }));
@@ -501,11 +312,14 @@ export default function ChatInterface() {
                                     }
                                     return updatedMessages;
                                 });
-                            } else if (chunk.type === 'response.completed' && chunk.response?.id) {
-                                console.log("Response completed, ID:", chunk.response.id);
-                                responseIdReceived = chunk.response.id;
-                            } else if (chunk.type === 'response.in_progress') {
-                                console.log("Response in progress, waiting for vector store results...");
+                            } else if (chunk.type === 'response.completed') {
+                                console.log("Response completed");
+                                if (chunk.threadId && !threadId) {
+                                    newThreadId = chunk.threadId;
+                                    setThreadId(chunk.threadId);
+                                }
+                            } else if (chunk.type === 'status') {
+                                console.log("Status update:", chunk.status);
                             }
                         } catch (e) {
                             console.error("Failed to parse SSE chunk:", line, e);
@@ -525,12 +339,16 @@ export default function ChatInterface() {
             }
         }
         console.log("Stream processing finished");
-        setCurrentResponseId(responseIdReceived);
 
-        // Handle agent transitions after stream is complete
-        if (currentAgent === 'eligibility') {
-            console.log("Handling eligibility response:", assistantResponse);
-            handleEligibilityResponse(assistantResponse, messageContent);
+                // Check for handoff triggers in the response
+        if (assistantResponse.includes('ELIGIBILITY_CHECK_START:')) {
+          const conditionMatch = assistantResponse.match(/ELIGIBILITY_CHECK_START:\s*(.+)/);
+          if (conditionMatch) {
+            const condition = conditionMatch[1].trim();
+            handleBookingStart(condition);
+          }
+        } else if (assistantResponse.includes('BOOKING_START')) {
+          handleBookingStart(bookingState.condition || '');
         }
 
     } catch (error: unknown) {
@@ -543,7 +361,7 @@ export default function ChatInterface() {
         stopThinkingIndicator();
         setIsLoading(false);
     }
-  }, [currentResponseId, isLoading, currentAgent, eligibilityState.currentQuestion, handleEligibilityResponse]);
+  }, [isLoading, threadId, handleBookingStart]);
 
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -557,25 +375,20 @@ export default function ChatInterface() {
   const handleNewChat = () => {
     setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
     setInput('');
-    setCurrentResponseId(null); // Reset conversation continuity ID
+    setThreadId(null); // Reset thread ID
     setIsLoading(false);
     setThinkingStage(0);
     setError(null);
     clearThinkingTimers();
     setShowHistory(false); // Close history panel
     isFirstUserMessage.current = true; // Reset flag for the new chat
-    setEligibilityState({ 
-      status: 'not_started',
-      currentQuestion: 'condition'
-    }); // Reset eligibility state
+    setBookingState({ 
+      status: 'not_started'
+    }); // Reset booking state
     setCurrentAgent('information'); // Always reset to information agent
-    setEligibilitySummary(null); // Clear eligibility summary
     setBookingInfo({ step: 'name' }); // Reset booking info
-    currentBookingStepRef.current = 'name';
-    bookingNameRef.current = null;
-    bookingPhoneRef.current = null;
-    bookingDateTimeRef.current = null;
     setBookingError(null); // Clear booking error
+    setIsBooking(false); // Reset booking mode
     console.log("New chat started");
   };
 
@@ -616,282 +429,37 @@ export default function ChatInterface() {
     return (<div className="flex items-center justify-center text-sm text-gray-500 my-2">{icon}<span>{text}</span></div>);
   };
 
-  // Update the handleBookingProcess function
-  const handleBookingProcess = useCallback(async (messageContent: string) => {
-    console.log('handleBookingProcess called with message:', messageContent);
-    console.log('Current booking step:', currentBookingStepRef.current);
+  const handleBookingComplete = useCallback((bookingData: any) => {
+    // Add success message
+    const successMessage = { 
+      role: 'assistant' as const, 
+      content: `Great! I've booked your call for ${bookingData.date} at ${bookingData.time}. We'll call you at ${bookingData.phone}. Thank you for choosing our service!` 
+    };
+    setMessages(prev => [...prev, successMessage]);
     
-    if (currentAgent !== 'booking') return;
+    // Reset booking state
+    setBookingState({ status: 'not_started' });
+    setIsBooking(false);
+    setCurrentAgent('information');
+  }, []);
+
+  const handleBookingCancel = useCallback(() => {
+    // Add cancellation message
+    const cancelMessage = { 
+      role: 'assistant' as const, 
+      content: 'Booking cancelled. You can continue asking questions about medical cannabis.' 
+    };
+    setMessages(prev => [...prev, cancelMessage]);
     
-    // Extract name if we're on the name step
-    if (currentBookingStepRef.current === 'name') {
-      console.log('Processing name step');
-      // First try to match specific patterns
-      const nameMatch = messageContent.match(/name\s+is\s+([^,.]+)/i) || 
-                       messageContent.match(/call\s+me\s+([^,.]+)/i) ||
-                       messageContent.match(/i\s+am\s+([^,.]+)/i) ||
-                       messageContent.match(/my\s+name\s+is\s+([^,.]+)/i);
-      
-      // If no specific pattern matches, assume the entire message is the name
-      // (unless it contains numbers which might indicate it's a phone number)
-      const name = nameMatch ? nameMatch[1].trim() : 
-                  (!/\d/.test(messageContent) ? messageContent.trim() : null);
-      
-      if (name) {
-        setBookingError(null);
-        console.log('Name extracted:', name);
-        // Update both the state and the refs
-        setBookingInfo(prev => ({ ...prev, name, step: 'phone' }));
-        currentBookingStepRef.current = 'phone';
-        bookingNameRef.current = name;
-        
-        // Add assistant message asking for phone
-        const phoneMessage = { 
-          role: 'assistant' as const, 
-          content: `Thank you ${name}. Could you please provide your phone number where we can reach you?` 
-        };
-        setMessages(prev => [...prev, phoneMessage]);
-        return;
-      }
-    }
-    
-    // Extract phone if we're on the phone step
-    if (currentBookingStepRef.current === 'phone') {
-      console.log('Processing phone step');
-      // Remove all spaces and non-digit characters from the message
-      const cleanedMessage = messageContent.replace(/\s+/g, '').replace(/[^\d]/g, '');
-      
-      // Check if the cleaned message contains at least 10 digits
-      if (cleanedMessage.length >= 10) {
-        setBookingError(null);
-        // Extract the first 11 digits (or more if provided)
-        // Make sure to preserve the leading zero
-        const phone = cleanedMessage.substring(0, 11);
-        console.log('Phone extracted:', phone);
-        // Update both the state and the refs
-        setBookingInfo(prev => ({ ...prev, phone, step: 'dateTime' }));
-        currentBookingStepRef.current = 'dateTime';
-        bookingPhoneRef.current = phone;
-        
-        // Add assistant message asking for date/time, including constraints
-        const dateTimeMessage = { 
-          role: 'assistant' as const, 
-          content: "Great! What date and time would you prefer for the call? Please note, appointments are available Monday to Friday, between 9am and 5pm UK time. (e.g., 'tomorrow at 2pm' or 'next Monday at 10am')" 
-        };
-        setMessages(prev => [...prev, dateTimeMessage]);
-        return;
-      } else {
-        setBookingError('Please enter a valid phone number with 11 digits.');
-        const errorMsg = {
-          role: 'assistant' as const,
-          content: 'The phone number you entered is invalid. Please enter a valid phone number with 11 digits.'
-        };
-        setMessages(prev => [...prev, errorMsg]);
-        return;
-      }
-    }
-    
-    // Extract date/time if we're on the dateTime step
-    if (currentBookingStepRef.current === 'dateTime') {
-      console.log('Processing dateTime step');
-      
-      // Use the simplified approach: assume the message is the date/time if it has digits
-      if (/\d/.test(messageContent)) {
-        const dateTime = messageContent.trim();
-        console.log('Potential DateTime extracted (full message):', dateTime);
-
-        // --- Add Validation Logic ---
-        let isValidTime = true; // Assume valid unless proven otherwise
-        const lowerCaseDateTime = dateTime.toLowerCase();
-
-        // Check for weekend days
-        if (/\bsaturday\b|\bsunday\b|\bweekend\b/.test(lowerCaseDateTime)) {
-            isValidTime = false;
-        }
-
-        // Check for hours outside 9am-5pm (simple check based on digits)
-        const hourMatch = lowerCaseDateTime.match(/\b([0-9]|1[0-9]|2[0-3])(:[0-5][0-9])?\s*(am|pm)?\b/);
-        if (hourMatch) {
-            let hour = parseInt(hourMatch[1], 10);
-            const ampm = hourMatch[3];
-
-            // Convert to 24-hour format if am/pm is present
-            if (ampm === 'pm' && hour < 12) {
-                hour += 12;
-            } else if (ampm === 'am' && hour === 12) { // Midnight case
-                hour = 0;
-            }
-
-            // Check if hour is outside 9 (inclusive) and 17 (exclusive)
-            if (hour < 9 || hour >= 17) {
-                isValidTime = false;
-            }
-            console.log(`Parsed Hour: ${hour}, isValid: ${isValidTime}`);
-        } else {
-            console.log('Could not extract specific hour for validation.');
-            // If no specific hour found, we might proceed optimistically or add more checks
-        }
-        // --- End Validation Logic ---
-
-        if (!isValidTime) {
-            console.log('Booking time is outside working hours.');
-            const invalidTimeMessage = {
-                role: 'assistant' as const,
-                content: "It looks like the time you suggested is outside our standard appointment hours (Monday to Friday, 9am - 5pm UK time). Could you please suggest a different time during these hours?"
-            };
-            setMessages(prev => [...prev, invalidTimeMessage]);
-            // Keep the step as dateTime, don't reset refs yet
-            setBookingInfo(prev => ({ ...prev, step: 'dateTime' })); 
-            currentBookingStepRef.current = 'dateTime';
-            return; // Stop processing, wait for new input
-        }
-
-        // ---- If time is valid, proceed with booking ----
-        console.log('Booking time is potentially valid. Proceeding...');
-        // Update both the state and the refs
-        setBookingInfo(prev => ({ ...prev, dateTime, step: 'complete' }));
-        currentBookingStepRef.current = 'complete';
-        bookingDateTimeRef.current = dateTime;
-        
-        try {
-          // Get the current values from the refs
-          const name = bookingNameRef.current;
-          const phone = bookingPhoneRef.current;
-          
-          // Check if we have all the required information
-          if (!name || !phone) {
-            console.error('Missing required information:', { name, phone, dateTime });
-            throw new Error('Missing required information for booking');
-          }
-
-          // Prepare eligibility fields
-          let condition = '';
-          let twoTreatments = '';
-          let familyHistory = '';
-          if (eligibilitySummary) {
-            condition = eligibilitySummary.condition || '';
-            twoTreatments = eligibilitySummary.previousTreatments ? 'Yes' : 'No';
-            familyHistory = eligibilitySummary.psychosisHistory ? 'Yes' : 'No';
-          }
-
-          console.log('Attempting to book call with:', { 
-            name, 
-            phone, 
-            dateTime,
-            condition,
-            twoTreatments,
-            familyHistory
-          });
-          
-          // Call the booking API - use the /api/sheets endpoint for Google Sheets integration
-          const response = await fetch('/api/sheets', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ 
-              name, 
-              phone, 
-              dateTime,
-              condition,
-              twoTreatments,
-              familyHistory
-            }),
-          });
-          
-          console.log('API response status:', response.status);
-          
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API error response:', errorText);
-            throw new Error(`Failed to book call: ${response.status} ${response.statusText}`);
-          }
-          
-          let result;
-          try {
-            result = await response.json();
-            console.log('Booking API response:', result);
-          } catch (e) {
-            console.error('Error parsing JSON response:', e);
-            // Continue with a success message even if JSON parsing fails
-          }
-          
-          // Add a success message
-          const successMessage = { 
-            role: 'assistant' as const, 
-            content: `Great! I've booked your call for ${dateTime}. We'll call you at ${phone}. Thank you for choosing our service!` 
-          };
-          setMessages(prev => [...prev, successMessage]);
-          
-          // Switch back to information agent
-          setCurrentAgent('information');
-          
-          // Reset booking info
-          setBookingInfo({ step: 'name' });
-          currentBookingStepRef.current = 'name';
-          bookingNameRef.current = null;
-          bookingPhoneRef.current = null;
-          bookingDateTimeRef.current = null;
-        } catch (error) {
-          console.error('Error booking call:', error);
-          
-          // Add an error message
-          const errorMessage = { 
-            role: 'assistant' as const, 
-            content: "I'm sorry, there was an error booking your call. Please try again later or contact support." 
-          };
-          setMessages(prev => [...prev, errorMessage]);
-          
-          // Reset booking info
-          setBookingInfo({ step: 'name' });
-          currentBookingStepRef.current = 'name';
-          bookingNameRef.current = null;
-          bookingPhoneRef.current = null;
-          bookingDateTimeRef.current = null;
-        }
-      } else {
-        console.log('No date/time pattern matched in message (missing digits?)');
-        // Add a message asking for a valid date/time
-        const invalidDateTimeMessage = { 
-          role: 'assistant' as const, 
-          content: "I couldn't understand that date and time. Please provide a date and time in a format like 'tomorrow at 2pm', 'next Monday at 10am', including the time." 
-        };
-        setMessages(prev => [...prev, invalidDateTimeMessage]);
-      }
-    }
-  }, [currentAgent]);
+    // Reset booking state
+    setBookingState({ status: 'not_started' });
+    setIsBooking(false);
+    setCurrentAgent('information');
+  }, []);
 
   // Remove the checkEligibility function
   const checkEligibility = async (condition: string) => {
     handleSendMessage(condition);
-  };
-
-  // Handler for eligibility form completion
-  const handleEligibilityComplete = (result: {
-    condition: string;
-    treatable: boolean;
-    previousTreatments: boolean;
-    psychosisHistory: boolean;
-  }) => {
-    setEligibilitySummary(result);
-    setCurrentAgent('booking');
-    setMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `Eligibility check complete.\n\nCondition: ${result.condition}\nTreatable: ${result.treatable ? 'Yes' : 'No'}\nTried two treatments: ${result.previousTreatments ? 'Yes' : 'No'}\nPsychosis/Schizophrenia: ${result.psychosisHistory ? 'Yes' : 'No'}\n\nLet&apos;s proceed with booking your call. What is your full name?`
-      }
-    ]);
-  };
-
-  // Handler for eligibility form cancel
-  const handleEligibilityCancel = () => {
-    setCurrentAgent('information');
-    setEligibilitySummary(null);
-    setMessages(prev => [
-      ...prev,
-      { role: 'assistant', content: 'Eligibility check cancelled. You can continue asking questions.' }
-    ]);
   };
 
   // --- Render Function ---
@@ -1002,16 +570,17 @@ export default function ChatInterface() {
         </div>
       </div>
 
-      {/* Eligibility Form for Eligibility Agent */}
-      {currentAgent === 'eligibility' && (
-        <EligibilityForm
-          onEligibilityComplete={handleEligibilityComplete}
-          onCancel={handleEligibilityCancel}
+      {/* Booking Flow */}
+      {isBooking && (
+        <BookingFlow
+          onComplete={handleBookingComplete}
+          onCancel={handleBookingCancel}
+          condition={bookingState.condition}
         />
       )}
 
-      {/* Input (hide if eligibility agent) */}
-      {currentAgent !== 'eligibility' && (
+      {/* Input (hide if booking) */}
+      {!isBooking && (
         <div className="flex flex-col w-full">
           <div className="flex items-center gap-2 p-4 border-t border-gray-200">
             <input
@@ -1025,20 +594,20 @@ export default function ChatInterface() {
             />
             <button
               onClick={() => handleSendMessage(input)}
-              disabled={isBooking}
+              disabled={isLoading}
               className="p-2 text-white bg-hubbot-hover rounded-lg hover:bg-hubbot-blue focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              {isBooking ? (
+              {isLoading ? (
                 <div className="flex items-center gap-2">
                   <FiLoader className="animate-spin" />
-                  <span>Booking...</span>
+                  <span>Thinking...</span>
                 </div>
               ) : (
                 <FiSend />
               )}
             </button>
           </div>
-          {isBooking && bookingError && (
+          {bookingError && (
             <div className="text-sm text-red-600 px-4 pb-2">{bookingError}</div>
           )}
         </div>

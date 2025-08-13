@@ -9,9 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google-cloud/local-auth": "^3.0.1",
-    "google-spreadsheet": "^4.1.4",
-    "googleapis": "^148.0.0",
+    "airtable": "^0.12.2",
     "lodash": "^4.17.21",
     "next": "15.2.4",
     "openai": "^4.91.1",
