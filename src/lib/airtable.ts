@@ -29,6 +29,12 @@ export interface AppointmentData {
   time: string; // 12-hour format with am/pm
 }
 
+// Type for Airtable record
+interface AirtableRecord {
+  id: string;
+  get(fieldName: string): any;
+}
+
 // Function to create a new appointment record
 export async function createAppointment(data: AppointmentData) {
   try {
@@ -115,7 +121,7 @@ export async function getAppointments() {
     }
     
     const records = await airtableBase(process.env.AIRTABLE_APPOINTMENTS_BOOKINGS || 'Bookings').select().all();
-    return records.map(record => ({
+    return records.map((record: AirtableRecord) => ({
       id: record.id,
       name: record.get('Name') as string,
       phone: record.get('Phone') as string,
@@ -168,7 +174,7 @@ export async function isTimeSlotAvailable(date: string, time: string) {
     console.log('Found records for this date:', records.length);
     
     // Check if any of these records have the same time (within 1 hour window)
-    const conflictingRecords = records.filter(record => {
+    const conflictingRecords = records.filter((record: AirtableRecord) => {
       const recordDate = new Date(record.get('Date') as string);
       const timeDiff = Math.abs(recordDate.getTime() - targetDateTime.getTime());
       return timeDiff < 60 * 60 * 1000; // 1 hour window
