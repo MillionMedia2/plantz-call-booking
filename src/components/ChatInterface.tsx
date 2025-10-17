@@ -4,10 +4,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FiSend, FiPlusCircle, FiDownload, FiClock, FiRotateCw, FiLoader, FiAlertCircle, FiMessageSquare, FiTrash2 } from 'react-icons/fi';
 import debounce from 'lodash/debounce';
-import styles from './ChatInterface.module.css';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import BookingFlow from './BookingFlow';
+import { Card, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { ScrollArea } from './ui/scroll-area';
+import { Separator } from './ui/separator';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -519,60 +523,66 @@ export default function ChatInterface() {
 
   // --- Render Function ---
   return (
-    <div className={styles.chatContainer}>
+    <Card className="flex flex-col h-full bg-white overflow-hidden rounded-xl border border-gray-200 shadow-sm p-0 gap-0">
       {/* Header */}
-      <div className={styles.header}>
+      <div className="flex items-center justify-between p-4 bg-[#8a9a5a]">
         <div className="flex items-center gap-[5px]">
           <img src="/herbie-icon.png" alt="Herbie" className="h-10 w-auto" />
-          <h2>Plantz Agent</h2>
+          <h2 className="text-white text-lg font-medium">Plantz Agent</h2>
         </div>
         <div className="flex space-x-2">
-          <button onClick={handleNewChat} title="New Chat" className="text-white/80 hover:text-white p-1.5 rounded">
+          <Button onClick={handleNewChat} title="New Chat" variant="ghost" size="icon-sm" className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8">
             <FiPlusCircle size={20} />
-          </button>
-          <button onClick={handleDownloadChat} title="Download Chat" className="text-white/80 hover:text-white p-1.5 rounded">
+          </Button>
+          <Button onClick={handleDownloadChat} title="Download Chat" variant="ghost" size="icon-sm" className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8">
             <FiDownload size={20} />
-          </button>
-          <button onClick={handleToggleHistory} title="Chat History" className={`text-white/80 hover:text-white p-1.5 rounded ${showHistory ? 'bg-hubbot-hover' : ''}`}>
+          </Button>
+          <Button onClick={handleToggleHistory} title="Chat History" variant="ghost" size="icon-sm" className={`text-white/80 hover:text-white hover:bg-white/10 h-8 w-8 ${showHistory ? 'bg-[#6f7d48]' : ''}`}>
             <FiMessageSquare size={20} />
-          </button>
-          <button 
+          </Button>
+          <Button 
             onClick={handleBookCall} 
             title="Book a Call" 
-            className="text-white/80 hover:text-white p-1.5 rounded"
+            variant="ghost"
+            size="icon-sm"
+            className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8"
           >
             <FiClock size={20} />
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Chat History Panel */}
       {showHistory && (
-        <div className="p-3 bg-hubbot-light border-b border-gray-200 max-h-40 overflow-y-auto">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-gray-700">Chat History</h3>
-            <button onClick={clearHistory} className="text-xs text-red-500 hover:text-red-600 p-1 rounded flex items-center">
-              <FiTrash2 size={14} className="mr-1"/> Clear All
-            </button>
-          </div>
-          {chatHistory.length === 0 ? (
-            <p className="text-sm text-gray-500 italic">No history yet.</p>
-          ) : (
-            <ul className="space-y-1">
-              {chatHistory.map((item) => (
-                <li key={item.id}>
-                  <button
-                    onClick={() => handleHistoryItemClick(/* item */)}
-                    className="w-full text-left text-sm text-blue-600 hover:bg-gray-100 p-2 rounded"
-                    title={`Start new chat (began with: ${item.firstMessage})`}
-                  >
-                    {item.firstMessage}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <>
+          <Separator />
+          <ScrollArea className="p-3 bg-[#f5f9f5] max-h-40">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-sm font-medium text-gray-700">Chat History</h3>
+              <Button onClick={clearHistory} variant="ghost" size="sm" className="text-xs text-red-500 hover:text-red-600 h-auto p-1">
+                <FiTrash2 size={14} className="mr-1"/> Clear All
+              </Button>
+            </div>
+            {chatHistory.length === 0 ? (
+              <p className="text-sm text-gray-500 italic">No history yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {chatHistory.map((item) => (
+                  <li key={item.id}>
+                    <Button
+                      onClick={() => handleHistoryItemClick(/* item */)}
+                      variant="ghost"
+                      className="w-full justify-start text-left text-sm text-blue-600 hover:bg-gray-100 h-auto p-2"
+                      title={`Start new chat (began with: ${item.firstMessage})`}
+                    >
+                      {item.firstMessage}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+        </>
       )}
 
       {/* Example Questions */}
@@ -597,36 +607,42 @@ export default function ChatInterface() {
       )} */}
 
       {/* Messages */}
-      <div className={styles.messageContainer}>
-        <div>
-          {messages.map((message, index) => (
-            <div key={index} className={`${styles.message} ${message.role === 'user' ? styles.userMessage : styles.assistantMessage}`}>
-              <div className={`${styles.messageBubble} ${message.role === 'user' ? styles.userBubble : styles.assistantBubble}`}>
-                <ReactMarkdown
-                  components={{
-                    p: ({children}) => <p className="whitespace-pre-wrap break-words">{children}</p>,
-                    h1: ({children}) => <h1>{children}</h1>,
-                    h2: ({children}) => <h2>{children}</h2>,
-                    h3: ({children}) => <h3>{children}</h3>,
-                    ul: ({children}) => <ul>{children}</ul>,
-                    ol: ({children}) => <ol>{children}</ol>,
-                    li: ({children}) => <li>{children}</li>
-                  } as Components}
-                >
-                  {message.content}
-                </ReactMarkdown>
+      <ScrollArea className="flex-1 overflow-y-auto bg-[#f5f9f5] min-h-0">
+        <div className="flex flex-col-reverse p-4">
+          <div>
+            {messages.map((message, index) => (
+              <div key={index} className={`mb-4 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`px-4 py-2 max-w-[85%] rounded-lg ${
+                  message.role === 'user' 
+                    ? 'bg-[#8a9a5a] text-white ml-auto rounded-br-sm' 
+                    : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'
+                }`}>
+                  <ReactMarkdown
+                    components={{
+                      p: ({children}) => <p className="whitespace-pre-wrap break-words mb-2 last:mb-0">{children}</p>,
+                      h1: ({children}) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                      h2: ({children}) => <h2 className="text-lg font-bold mb-2">{children}</h2>,
+                      h3: ({children}) => <h3 className="text-base font-bold mb-2">{children}</h3>,
+                      ul: ({children}) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+                      ol: ({children}) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+                      li: ({children}) => <li className="mb-1">{children}</li>
+                    } as Components}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
               </div>
-            </div>
-          ))}
-          {renderThinkingIndicator()}
-          {error && (
-            <div className="text-sm text-red-600 p-2 bg-red-50 rounded">
-              <span>{error}</span>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+            ))}
+            {renderThinkingIndicator()}
+            {error && (
+              <div className="text-sm text-red-600 p-2 bg-red-50 rounded">
+                <span>{error}</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      </div>
+      </ScrollArea>
 
       {/* Booking Flow */}
                             {isBooking && (
@@ -640,37 +656,38 @@ export default function ChatInterface() {
 
       {/* Input (hide if booking) */}
       {!isBooking && (
-        <div className="flex flex-col w-full">
-          <div className="flex items-center gap-2 p-4 border-t border-gray-200">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
-              placeholder="Type your message..."
-              className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isBooking}
-            />
-            <button
-              onClick={() => handleSendMessage(input)}
-              disabled={isLoading}
-              className="p-2 text-white bg-hubbot-hover rounded-lg hover:bg-hubbot-blue focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <FiLoader className="animate-spin" />
-                  <span>Thinking...</span>
-                </div>
-              ) : (
-                <FiSend />
-              )}
-            </button>
+        <>
+          <Separator />
+          <div className="flex flex-col w-full bg-white">
+            <div className="flex items-center gap-2 p-4">
+              <Input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage(input)}
+                placeholder="Type your message..."
+                disabled={isBooking}
+                className="flex-1 border-gray-300 focus:border-[#8a9a5a] focus:ring-[#8a9a5a]/10"
+              />
+              <Button
+                onClick={() => handleSendMessage(input)}
+                disabled={isLoading}
+                className="bg-[#8a9a5a] hover:bg-[#6f7d48] text-white"
+                size="icon"
+              >
+                {isLoading ? (
+                  <FiLoader className="animate-spin" size={18} />
+                ) : (
+                  <FiSend size={18} />
+                )}
+              </Button>
+            </div>
+            {bookingError && (
+              <div className="text-sm text-red-600 px-4 pb-2">{bookingError}</div>
+            )}
           </div>
-          {bookingError && (
-            <div className="text-sm text-red-600 px-4 pb-2">{bookingError}</div>
-          )}
-        </div>
+        </>
       )}
-    </div>
+    </Card>
   );
 }
