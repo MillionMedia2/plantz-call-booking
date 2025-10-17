@@ -523,31 +523,30 @@ export default function ChatInterface() {
 
   // --- Render Function ---
   return (
-    <Card className="flex flex-col h-full bg-white overflow-hidden rounded-xl border border-gray-200 shadow-sm p-0 gap-0">
+    <Card className="flex flex-col h-full bg-white overflow-hidden rounded-xl border-0 shadow-sm p-0 gap-0">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-[#8a9a5a]">
         <div className="flex items-center gap-[5px]">
           <img src="/herbie-icon.png" alt="Herbie" className="h-10 w-auto" />
           <h2 className="text-white text-lg font-medium">Plantz Agent</h2>
         </div>
-        <div className="flex space-x-2">
-          <Button onClick={handleNewChat} title="New Chat" variant="ghost" size="icon-sm" className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8">
-            <FiPlusCircle size={20} />
+        <div className="flex gap-0">
+          <Button onClick={handleNewChat} title="New Chat" variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10 h-auto w-auto p-0.5 [&_svg]:!w-auto [&_svg]:!h-auto">
+            <FiPlusCircle size={24} />
           </Button>
-          <Button onClick={handleDownloadChat} title="Download Chat" variant="ghost" size="icon-sm" className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8">
-            <FiDownload size={20} />
+          <Button onClick={handleDownloadChat} title="Download Chat" variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10 h-auto w-auto p-0.5 [&_svg]:!w-auto [&_svg]:!h-auto">
+            <FiDownload size={24} />
           </Button>
-          <Button onClick={handleToggleHistory} title="Chat History" variant="ghost" size="icon-sm" className={`text-white/80 hover:text-white hover:bg-white/10 h-8 w-8 ${showHistory ? 'bg-[#6f7d48]' : ''}`}>
-            <FiMessageSquare size={20} />
+          <Button onClick={handleToggleHistory} title="Chat History" variant="ghost" className={`text-white/80 hover:text-white hover:bg-white/10 h-auto w-auto p-0.5 [&_svg]:!w-auto [&_svg]:!h-auto ${showHistory ? 'bg-[#6f7d48]' : ''}`}>
+            <FiMessageSquare size={24} />
           </Button>
           <Button 
             onClick={handleBookCall} 
             title="Book a Call" 
             variant="ghost"
-            size="icon-sm"
-            className="text-white/80 hover:text-white hover:bg-white/10 h-8 w-8"
+            className="text-white/80 hover:text-white hover:bg-white/10 h-auto w-auto p-0.5 [&_svg]:!w-auto [&_svg]:!h-auto"
           >
-            <FiClock size={20} />
+            <FiClock size={24} />
           </Button>
         </div>
       </div>
@@ -607,8 +606,8 @@ export default function ChatInterface() {
       )} */}
 
       {/* Messages */}
-      <ScrollArea className="flex-1 overflow-y-auto bg-[#f5f9f5] min-h-0">
-        <div className="flex flex-col-reverse p-4">
+      <div className="flex-1 overflow-y-auto flex flex-col-reverse bg-[#f5f9f5] min-h-0 p-4">
+        <div className="flex flex-col">
           <div>
             {messages.map((message, index) => (
               <div key={index} className={`mb-4 flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -642,7 +641,7 @@ export default function ChatInterface() {
             <div ref={messagesEndRef} />
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Booking Flow */}
                             {isBooking && (
