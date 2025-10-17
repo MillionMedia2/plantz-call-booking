@@ -9,9 +9,9 @@ module.exports = {
     extend: {
       colors: {
         hubbot: {
-          dark: '#33475b',
-          light: '#f5f8fa',
-          hover: '#425b76'
+          dark: '#8a9a5a',
+          light: '#f5f9f5',
+          hover: '#6f7d48'
         }
       },
       boxShadow: {

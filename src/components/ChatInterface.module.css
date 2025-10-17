@@ -6,7 +6,7 @@
 
 .header {
   @apply flex items-center justify-between p-4;
-  background-color: #33475b;
+  background-color: #8a9a5a;
 }
 
 .header h2 {
@@ -19,7 +19,7 @@
   display: flex;
   flex-direction: column-reverse;
   padding: 1rem;
-  background-color: #f5f8fa;
+  background-color: #f5f9f5;
   min-height: 0;
 }
 
@@ -77,7 +77,7 @@
 }
 
 .userBubble {
-  @apply bg-[#33475b] text-white ml-auto;
+  @apply bg-[#8a9a5a] text-white ml-auto;
   border-bottom-right-radius: 4px;
 }
 
@@ -105,8 +105,8 @@
 }
 
 .input:focus {
-  border-color: theme('colors.hubbot.dark');
-  box-shadow: 0 0 0 2px rgba(51, 71, 91, 0.1);
+  border-color: #8a9a5a;
+  box-shadow: 0 0 0 2px rgba(138, 154, 90, 0.1);
 }
 
 /* Add mobile styles */
@@ -123,7 +123,7 @@
 
 .sendButton {
   padding: 0.75rem 1rem;
-  background-color: theme('colors.hubbot.dark');
+  background-color: #8a9a5a;
   color: white;
   border: none;
   border-radius: theme('borderRadius.hubbot');
@@ -132,7 +132,7 @@
 }
 
 .sendButton:hover:not(:disabled) {
-  background-color: #425b76;
+  background-color: #6f7d48;
 }
 
 .sendButton:disabled {
@@ -165,5 +165,5 @@
 }
 
 .faqButton:hover {
-  background-color: theme('colors.hubbot.light');
+  background-color: #f5f9f5;
 } 

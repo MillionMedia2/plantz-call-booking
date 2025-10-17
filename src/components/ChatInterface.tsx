@@ -522,7 +522,10 @@ export default function ChatInterface() {
     <div className={styles.chatContainer}>
       {/* Header */}
       <div className={styles.header}>
-        <h2>Plantz Agent</h2>
+        <div className="flex items-center gap-[5px]">
+          <img src="/herbie-icon.png" alt="Herbie" className="h-10 w-auto" />
+          <h2>Plantz Agent</h2>
+        </div>
         <div className="flex space-x-2">
           <button onClick={handleNewChat} title="New Chat" className="text-white/80 hover:text-white p-1.5 rounded">
             <FiPlusCircle size={20} />
