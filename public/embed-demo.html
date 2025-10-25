@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plantz Chat Embed Demo</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background: #f5f9f5;
+      color: #333;
+    }
+    h1 {
+      color: #8a9a5a;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 40px;
+    }
+    .demo-section {
+      background: white;
+      padding: 30px;
+      margin-bottom: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h2 {
+      color: #8a9a5a;
+      margin-top: 0;
+      border-bottom: 2px solid #f5f9f5;
+      padding-bottom: 10px;
+    }
+    .code-block {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      margin: 15px 0;
+      border-left: 3px solid #8a9a5a;
+    }
+    button {
+      background: #8a9a5a;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin: 5px;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #6f7d48;
+    }
+    .iframe-container {
+      margin-top: 20px;
+      min-height: 400px;
+    }
+    .note {
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 12px 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .success {
+      background: #f0fdf4;
+      border-left: 3px solid #10b981;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌿 Plantz Chat Embed SDK Demo</h1>
+  <p class="subtitle">Test all integration methods for the Plantz medical cannabis chatbot</p>
+
+  <!-- Demo 1: Auto Button -->
+  <div class="demo-section">
+    <h2>1. Auto Button (One-Line Install)</h2>
+    <p>The simplest integration - just add one script tag and a button appears automatically.</p>
+    
+    <div class="code-block">
+&lt;script src="http://localhost:3000/embed.js"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-autobutton="true"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-label="Ask Plantz"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-agent="doctor"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-theme="light"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-source="demo:autobutton"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-question="What helps with sleep?"&gt;&lt;/script&gt;
+    </div>
+    
+    <div class="note success">
+      ✅ <strong>Active:</strong> Look for the green button in the bottom-right corner!
+    </div>
+  </div>
+
+  <!-- Demo 2: Programmatic Popup -->
+  <div class="demo-section">
+    <h2>2. Programmatic Popup</h2>
+    <p>Open the chat in a popup window with custom questions and settings.</p>
+    
+    <div class="code-block">
+&lt;script src="http://localhost:3000/embed.js"&gt;&lt;/script&gt;<br>
+&lt;script&gt;<br>
+&nbsp;&nbsp;PlantzChat.open({<br>
+&nbsp;&nbsp;&nbsp;&nbsp;question: "What helps with sleep?",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;agent: "doctor",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;theme: "light",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;source: "demo:popup",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;width: 420,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;height: 720<br>
+&nbsp;&nbsp;});<br>
+&lt;/script&gt;
+    </div>
+    
+    <button onclick="PlantzChat.open({ question: 'What helps with sleep?', source: 'demo:popup1' })">
+      Open: Sleep Question
+    </button>
+    <button onclick="PlantzChat.open({ question: 'What conditions can be treated?', source: 'demo:popup2' })">
+      Open: Conditions Question
+    </button>
+    <button onclick="PlantzChat.open({ source: 'demo:popup3' })">
+      Open: No Question
+    </button>
+  </div>
+
+  <!-- Demo 3: Custom Button -->
+  <div class="demo-section">
+    <h2>3. Custom Mounted Button</h2>
+    <p>Programmatically mount a button anywhere on your page.</p>
+    
+    <div class="code-block">
+&lt;script src="http://localhost:3000/embed.js"&gt;&lt;/script&gt;<br>
+&lt;script&gt;<br>
+&nbsp;&nbsp;PlantzChat.mountButton({<br>
+&nbsp;&nbsp;&nbsp;&nbsp;label: "Get Cannabis Advice",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;agent: "doctor",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;source: "demo:custom-button",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;question: "I need help choosing a clinic"<br>
+&nbsp;&nbsp;});<br>
+&lt;/script&gt;
+    </div>
+    
+    <button onclick="mountCustomButton()">
+      Mount Custom Button
+    </button>
+    <div class="note">
+      Click above to add another floating button (will appear in bottom-right)
+    </div>
+  </div>
+
+  <!-- Demo 4: Embedded Iframe -->
+  <div class="demo-section">
+    <h2>4. Embedded Iframe</h2>
+    <p>Embed the chat directly in your page as an iframe.</p>
+    
+    <div class="code-block">
+&lt;div id="chat-container"&gt;&lt;/div&gt;<br>
+&lt;script src="http://localhost:3000/embed.js"&gt;&lt;/script&gt;<br>
+&lt;script&gt;<br>
+&nbsp;&nbsp;PlantzChat.embedIframe({<br>
+&nbsp;&nbsp;&nbsp;&nbsp;container: "#chat-container",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;question: "What helps with anxiety?",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;source: "demo:iframe",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;height: "600px",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;autoHeight: false<br>
+&nbsp;&nbsp;});<br>
+&lt;/script&gt;
+    </div>
+    
+    <button onclick="embedInline()">
+      Embed Chat Below
+    </button>
+    <button onclick="clearEmbed()">
+      Clear Embed
+    </button>
+    
+    <div id="chat-container" class="iframe-container"></div>
+  </div>
+
+  <!-- Demo 5: Event Listening -->
+  <div class="demo-section">
+    <h2>5. Event Listening (Analytics)</h2>
+    <p>Listen for events from the embedded chat for analytics tracking.</p>
+    
+    <div class="code-block">
+window.addEventListener("message", function(e) {<br>
+&nbsp;&nbsp;if (e.data && e.data.type === "plantz:event") {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;console.log("Event:", e.data.payload.name, e.data.payload.detail);<br>
+&nbsp;&nbsp;}<br>
+});
+    </div>
+    
+    <div class="note">
+      Open the browser console to see events: conversation_start, assistant_reply, booking_started, booking_completed, error
+    </div>
+  </div>
+
+  <!-- Load the SDK -->
+  <script src="http://localhost:3000/embed.js" 
+          data-autobutton="true"
+          data-label="Ask Plantz 💬"
+          data-source="demo:autobutton"
+          data-question="What helps with sleep?"></script>
+
+  <!-- Demo Scripts -->
+  <script>
+    // Listen for events
+    window.addEventListener("message", function(e) {
+      if (e.data && e.data.type && e.data.type.startsWith("plantz:")) {
+        console.log("📨 Plantz Event:", e.data.type, e.data.payload);
+      }
+    });
+
+    function mountCustomButton() {
+      PlantzChat.mountButton({
+        label: "Custom Button 🌿",
+        source: "demo:custom-mounted",
+        question: "I need help choosing a clinic"
+      });
+    }
+
+    function embedInline() {
+      var container = document.getElementById("chat-container");
+      container.innerHTML = ""; // Clear first
+      PlantzChat.embedIframe({
+        container: "#chat-container",
+        question: "What helps with anxiety?",
+        source: "demo:iframe",
+        height: "600px",
+        autoHeight: false,
+        title: "Plantz Medical Cannabis Chat"
+      });
+    }
+
+    function clearEmbed() {
+      document.getElementById("chat-container").innerHTML = "";
+    }
+
+    console.log("🌿 Plantz Chat SDK loaded:", window.PlantzChat);
+    console.log("Available methods:", Object.keys(window.PlantzChat));
+  </script>
+</body>
+</html>
+

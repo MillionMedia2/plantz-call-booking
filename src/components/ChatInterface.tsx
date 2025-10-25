@@ -12,6 +12,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
+import type { EmbedConfig } from '@/types/embed';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -33,7 +34,7 @@ interface BookingState {
   condition?: string;
 }
 
-export default function ChatInterface() {
+export default function ChatInterface({ embedConfig }: { embedConfig?: EmbedConfig } = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -71,6 +72,10 @@ export default function ChatInterface() {
   // Add bookingError state
   const [bookingError, setBookingError] = useState<string | null>(null);
 
+  // Embed-specific refs
+  const sentSeed = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   // Cleanup function for SSE and timeouts
   useEffect(() => {
     return () => {
@@ -105,6 +110,69 @@ export default function ChatInterface() {
         console.error("Failed to save chat history to localStorage:", e);
     }
   }, [chatHistory]);
+
+  // --- Embed Integration ---
+
+  // Helper to emit events for embed analytics
+  const emitEvent = useCallback((name: string, detail?: any) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent("plantz-emit", { 
+          detail: { name, detail, threadId, sourceTag: embedConfig?.sourceTag } 
+        })
+      );
+    }
+  }, [threadId, embedConfig?.sourceTag]);
+
+  // Helper functions for embed commands
+  const resetConversation = useCallback(() => {
+    setMessages([{ role: 'assistant', content: 'Ask our Plantz Agent about medical cannabis' }]);
+    setThreadId(null);
+    isFirstUserMessage.current = true;
+    setIsBooking(false);
+    setBookingState({ status: 'not_started' });
+    setError(null);
+    emitEvent('conversation_reset');
+  }, [emitEvent]);
+
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // 1) One-time auto-send of initialQuestion
+  useEffect(() => {
+    const q = embedConfig?.initialQuestion?.trim();
+    if (!sentSeed.current && q && messages.length === 1 && !isLoading) {
+      sentSeed.current = true;
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        handleSendMessage(q);
+        emitEvent('conversation_start', { initialQuestion: q });
+      }, 100);
+    }
+  }, [embedConfig?.initialQuestion, messages.length, isLoading]);
+
+  // 2) Listen for seeds/commands from wrapper (postMessage bridge)
+  useEffect(() => {
+    function onSeed(e: Event) {
+      const question = (e as CustomEvent).detail as string;
+      if (typeof question === "string" && question.trim()) {
+        handleSendMessage(question);
+        emitEvent('conversation_start', { seededQuestion: question });
+      }
+    }
+    function onCmd(e: Event) {
+      const { name } = (e as CustomEvent).detail || {};
+      if (name === "reset") resetConversation();
+      if (name === "focus") focusInput();
+    }
+    window.addEventListener("plantz-seed", onSeed as EventListener);
+    window.addEventListener("plantz-command", onCmd as EventListener);
+    return () => {
+      window.removeEventListener("plantz-seed", onSeed as EventListener);
+      window.removeEventListener("plantz-command", onCmd as EventListener);
+    };
+  }, [emitEvent, resetConversation, focusInput]);
 
   const addHistoryEntry = (firstMessage: string) => {
     const newEntry: HistoryItem = {
@@ -223,6 +291,9 @@ export default function ChatInterface() {
       condition: ''
     });
     setIsBooking(true);
+    
+    // Emit booking_started event
+    emitEvent('booking_started', { threadId });
   };
 
   const handleSendMessage = useCallback(async (messageContent: string) => {
@@ -245,6 +316,7 @@ export default function ChatInterface() {
     let assistantResponse = '';
     let assistantMessageIndex = -1;
     let newThreadId = threadId;
+    let firstReplyEmitted = false; // Track if we've emitted assistant_reply event
 
     try {
         const response = await sendMessageWithRetry(messageContent, 0);
@@ -303,6 +375,13 @@ export default function ChatInterface() {
                             if (chunk.type === 'response.output_text.delta' && chunk.delta) {
                                 assistantResponse += chunk.delta;
                                 console.log("Updated assistant response:", assistantResponse);
+                                
+                                // Emit assistant_reply event on first token
+                                if (!firstReplyEmitted && assistantResponse.trim()) {
+                                    firstReplyEmitted = true;
+                                    emitEvent('assistant_reply', { threadId: newThreadId });
+                                }
+                                
                                 setMessages(prev => {
                                     const updatedMessages = [...prev];
                                     if (assistantMessageIndex !== -1 && updatedMessages[assistantMessageIndex]) {
@@ -344,14 +423,22 @@ export default function ChatInterface() {
     } catch (error: unknown) {
         console.error("Stream error details:", error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        const errorCode = error instanceof Error && 'code' in error ? (error as any).code : undefined;
         setError(`Error: ${errorMessage}`);
         setMessages(prev => prev.filter((_, index) => index !== assistantMessageIndex));
+        
+        // Emit error event
+        emitEvent('error', { 
+          message: errorMessage, 
+          code: errorCode, 
+          threadId: newThreadId 
+        });
     } finally {
         console.log("Stream handling complete");
         stopThinkingIndicator();
         setIsLoading(false);
     }
-  }, [isLoading, threadId]);
+  }, [isLoading, threadId, emitEvent]);
 
   const handleFormSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -500,7 +587,17 @@ export default function ChatInterface() {
     setBookingState({ status: 'not_started' });
     setIsBooking(false);
     setCurrentAgent('information');
-  }, []);
+    
+    // Emit booking_completed event
+    emitEvent('booking_completed', { 
+      threadId, 
+      bookingData: {
+        date: bookingData.date,
+        time: bookingData.time,
+        phone: bookingData.phone
+      }
+    });
+  }, [threadId, emitEvent]);
 
   const handleBookingCancel = useCallback(() => {
     // Add cancellation message
@@ -660,6 +757,7 @@ export default function ChatInterface() {
           <div className="flex flex-col w-full bg-white">
             <div className="flex items-center gap-2 p-4">
               <Input
+                ref={inputRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
